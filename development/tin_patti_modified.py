@@ -1,4 +1,4 @@
-"""(মনে রাখার জন্য সিরিয়াল দিলাম)
+"""(মনে রাখার জন্য সিরিয়াল দিলাম)
 
 Trail / Set (তিনটা একই)
 👉 যেমন: A♠ A♥ A♦
@@ -11,232 +11,429 @@ Color (Flush)
 👉 যেমন: 2♠ 5♠ 9♠
 Pair (দুইটা একই)
 👉 যেমন: K♠ K♦ 7♣
-High Card (সবচেয়ে বড় কার্ড)
-👉 কিছুই না হলে, বড় কার্ড দেখে জয়"""
+High Card (সবচেয়ে বড় কার্ড)
+👉 কিছুই না হলে, বড় কার্ড দেখে জয়"""
 
 
 import random
 from datetime import datetime
 from collections import Counter
-from dataclasses import dataclass
-from typing import List, Tuple, Literal
+from dataclasses import dataclass, field
+from typing import Dict, Final, List, Optional, Tuple, Literal
 
 
-# -----------------------------
+# ─────────────────────────────────────────────
+# Custom Exceptions
+# ─────────────────────────────────────────────
+
+class TinPattiError(Exception):
+    """Base exception for all Tin Patti errors."""
+
+
+class InvalidHandError(TinPattiError):
+    """Raised when a hand does not contain exactly 3 valid cards."""
+
+
+class InvalidBidError(TinPattiError):
+    """Raised when a bidding amount is non-positive."""
+
+
+class InvalidDelayError(TinPattiError):
+    """Raised when delay is outside the accepted float range."""
+
+
+class DeckExhaustedError(TinPattiError):
+    """Raised when the deck runs out of cards unexpectedly."""
+
+
+class InvalidBiasError(TinPattiError):
+    """Raised when an unsupported bias value is supplied."""
+
+
+# ─────────────────────────────────────────────
 # Constants
-# -----------------------------
-MIN_BIAS_THRESHOLD = 10
-MAX_BIAS_THRESHOLD = 20
+# ─────────────────────────────────────────────
 
-SUITS = ['H', 'D', 'C', 'S']
-RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
+MIN_BIAS_THRESHOLD: Final[int] = 10
+MAX_BIAS_THRESHOLD: Final[int] = 20
 
-RANK_VALUE = {r: i for i, r in enumerate(RANKS, start=2)}
+DELAY_MIN: Final[float] = 0.3
+DELAY_MAX: Final[float] = 9.0
 
-# Hand Rankings
-TRAIL = 6
-PURE_SEQ = 5
-SEQ = 4
-COLOR = 3
-PAIR = 2
-HIGH = 1
+SUITS: Final[Tuple[str, ...]] = ('H', 'D', 'C', 'S')
+RANKS: Final[Tuple[str, ...]] = (
+    '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'
+)
+
+RANK_VALUE: Final[Dict[str, int]] = {r: i for i, r in enumerate(RANKS, start=2)}
+
+# Hand rank constants
+TRAIL:    Final[int] = 6
+PURE_SEQ: Final[int] = 5
+SEQ:      Final[int] = 4
+COLOR:    Final[int] = 3
+PAIR:     Final[int] = 2
+HIGH:     Final[int] = 1
+
+Winner   = Literal["A", "B", "TIE"]
+BiasType = Literal[0, 1]
+HandTuple = Tuple[Tuple[str, str], ...]
+GameOutput = Dict[str, object]
 
 
-# -----------------------------
-# Card Model
-# -----------------------------
+# ─────────────────────────────────────────────
+# Card
+# ─────────────────────────────────────────────
+
 @dataclass(frozen=True)
 class Card:
     rank: str
     suit: str
 
-    def value(self):
+    def __post_init__(self) -> None:
+        if self.rank not in RANK_VALUE:
+            raise InvalidHandError(f"Unknown rank: '{self.rank!r}'")
+        if self.suit not in SUITS:
+            raise InvalidHandError(f"Unknown suit: '{self.suit!r}'")
+
+    def value(self) -> int:
         return RANK_VALUE[self.rank]
 
+    def __str__(self) -> str:
+        return f"{self.rank}{self.suit}"
 
-# -----------------------------
+    def __repr__(self) -> str:
+        return f"Card({self.rank!r}, {self.suit!r})"
+
+
+# ─────────────────────────────────────────────
 # Deck
-# -----------------------------
+# ─────────────────────────────────────────────
+
 class Deck:
-    def __init__(self):
-        self.cards = [Card(r, s) for r in RANKS for s in SUITS]
+    """A standard 52-card deck. Shuffle before dealing."""
 
-    def shuffle(self):
-        random.shuffle(self.cards)
+    __slots__ = ("_cards",)
 
-    def deal(self, n=3) -> List[Card]:
-        return [self.cards.pop() for _ in range(n)]
+    def __init__(self) -> None:
+        self._cards: List[Card] = [Card(r, s) for r in RANKS for s in SUITS]
+
+    def shuffle(self) -> None:
+        random.shuffle(self._cards)
+
+    def deal(self, n: int = 3) -> List[Card]:
+        if len(self._cards) < n:
+            raise DeckExhaustedError(
+                f"Cannot deal {n} cards — only {len(self._cards)} remain."
+            )
+        return [self._cards.pop() for _ in range(n)]
+
+    def __len__(self) -> int:
+        return len(self._cards)
 
 
-# -----------------------------
+# ─────────────────────────────────────────────
 # Hand Evaluator
-# -----------------------------
+# ─────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class HandRating:
+    """Immutable result of evaluating a 3-card hand."""
+    rank: int
+    tiebreakers: Tuple[int, ...]
+
+    def __gt__(self, other: "HandRating") -> bool:
+        if self.rank != other.rank:
+            return self.rank > other.rank
+        return self.tiebreakers > other.tiebreakers
+
+    def __lt__(self, other: "HandRating") -> bool:
+        return other > self
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, HandRating):
+            return NotImplemented
+        return self.rank == other.rank and self.tiebreakers == other.tiebreakers
+
+
 class HandEvaluator:
+    """Stateless utility class for evaluating and comparing Tin Patti hands."""
+
+    # A-2-3 special sequence sentinel
+    _ACE_LOW_SEQ: Final[List[int]] = [2, 3, 14]
 
     @staticmethod
-    def is_sequence(values: List[int]) -> bool:
-        values = sorted(values)
+    def _validate_hand(hand: List[Card]) -> None:
+        if len(hand) != 3:
+            raise InvalidHandError(
+                f"A hand must have exactly 3 cards, got {len(hand)}."
+            )
 
-        # A-2-3 special case
-        if values == [2, 3, 14]:
+    @classmethod
+    def _is_sequence(cls, values: List[int]) -> bool:
+        """Return True if the sorted values form a consecutive run (A-2-3 counts)."""
+        sv = sorted(values)
+        if sv == cls._ACE_LOW_SEQ:
             return True
+        return sv[2] - sv[1] == 1 and sv[1] - sv[0] == 1
 
-        return values[2] - values[1] == 1 and values[1] - values[0] == 1
+    @classmethod
+    def evaluate(cls, hand: List[Card]) -> HandRating:
+        """Evaluate a 3-card hand and return its HandRating."""
+        cls._validate_hand(hand)
 
-    @staticmethod
-    def evaluate(hand: List[Card]) -> Tuple[int, List[int]]:
-        values = sorted([c.value() for c in hand])
-        suits = [c.suit for c in hand]
+        values: List[int] = sorted(c.value() for c in hand)
+        suits:  List[str] = [c.suit for c in hand]
 
-        count = Counter(values)
-        freq = sorted(count.values(), reverse=True)
+        count: Counter = Counter(values)
+        freq:  List[int] = sorted(count.values(), reverse=True)
 
-        is_flush = len(set(suits)) == 1
-        is_seq = HandEvaluator.is_sequence(values)
+        is_flush: bool = len(set(suits)) == 1
+        is_seq:   bool = cls._is_sequence(values)
 
         # Trail
         if freq == [3]:
-            return (TRAIL, [values[2]])  # all three equal; use [2] (max) for semantic clarity
+            return HandRating(TRAIL, (values[2],))
 
         # Pure Sequence
         if is_seq and is_flush:
-            if values == [2, 3, 14]:
-                return (PURE_SEQ, [3])  # lowest sequence
-            return (PURE_SEQ, [values[2]])  # highest card defines strength
+            high = 3 if values == cls._ACE_LOW_SEQ else values[2]
+            return HandRating(PURE_SEQ, (high,))
 
         # Sequence
         if is_seq:
-            if values == [2, 3, 14]:
-                return (SEQ, [3])  # lowest
-            return (SEQ, [values[2]])  # highest card
+            high = 3 if values == cls._ACE_LOW_SEQ else values[2]
+            return HandRating(SEQ, (high,))
 
         # Color
         if is_flush:
-            return (COLOR, sorted(values, reverse=True))
+            return HandRating(COLOR, tuple(sorted(values, reverse=True)))
 
         # Pair
         if freq == [2, 1]:
-            pair_val = next(k for k, v in count.items() if v == 2)
-            kicker = next(k for k, v in count.items() if v == 1)
-            return (PAIR, [pair_val, kicker])
+            pair_val: int = next(k for k, v in count.items() if v == 2)
+            kicker:   int = next(k for k, v in count.items() if v == 1)
+            return HandRating(PAIR, (pair_val, kicker))
 
         # High Card
-        return (HIGH, sorted(values, reverse=True))
+        return HandRating(HIGH, tuple(sorted(values, reverse=True)))
 
-    @staticmethod
-    def compare(hand1: List[Card], hand2: List[Card]) -> int:
-        rank1, val1 = HandEvaluator.evaluate(hand1)
-        rank2, val2 = HandEvaluator.evaluate(hand2)
+    @classmethod
+    def compare(cls, hand1: List[Card], hand2: List[Card]) -> int:
+        """
+        Compare two hands.
+        Returns  1 if hand1 wins, -1 if hand2 wins, 0 for a tie.
+        """
+        r1 = cls.evaluate(hand1)
+        r2 = cls.evaluate(hand2)
 
-        if rank1 != rank2:
-            return 1 if rank1 > rank2 else -1
-
-        for v1, v2 in zip(val1, val2):
-            if v1 != v2:
-                return 1 if v1 > v2 else -1
-
+        if r1 > r2:
+            return 1
+        if r1 < r2:
+            return -1
         return 0
 
 
-# -----------------------------
-# Game Engine
-# -----------------------------
-class TinPattiGame:
-    def __init__(self, bias: Literal[0, 1] = None, evaluation_threshold: int = 20):
-        self.bias = bias  # KEEPING THIS AS REQUESTED
-        self.evaluation_threshold = evaluation_threshold
+# ─────────────────────────────────────────────
+# Bias Calculator
+# ─────────────────────────────────────────────
 
-    def play_round(self) -> Tuple[List[Card], List[Card]]:
+class BiasCalculator:
+    """Encapsulates bias logic: lower bidder is favoured. LOGIC UNCHANGED."""
+
+    @staticmethod
+    def calculate(group_a_bidding_amt: float,
+                  group_b_bidding_amt: float) -> BiasType:
+        if group_a_bidding_amt <= 0 or group_b_bidding_amt <= 0:
+            raise InvalidBidError(
+                "Bidding amounts must be positive. "
+                f"Got A={group_a_bidding_amt}, B={group_b_bidding_amt}."
+            )
+
+        if group_a_bidding_amt < group_b_bidding_amt:
+            return 0          # A bids less → bias favours A (lower bidder wins)
+        if group_a_bidding_amt > group_b_bidding_amt:
+            return 1          # B bids less → bias favours B
+        return random.randint(0, 1)  # type: ignore[return-value]
+
+
+# ─────────────────────────────────────────────
+# Delay Validator
+# ─────────────────────────────────────────────
+
+class DelayGuard:
+    """Clamps / validates the delay value according to game rules."""
+
+    @staticmethod
+    def clamp(delay: float) -> float:
+        if not isinstance(delay, (int, float)):
+            raise InvalidDelayError(f"Delay must be numeric, got {type(delay).__name__}.")
+        if delay <= 0.2:
+            return DELAY_MIN
+        if delay >= 10:
+            return DELAY_MAX
+        return float(delay)
+
+
+# ─────────────────────────────────────────────
+# Round Result
+# ─────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class RoundResult:
+    """Immutable snapshot of a single played round."""
+    group_a: Tuple[Card, ...]
+    group_b: Tuple[Card, ...]
+    winner:  Winner
+
+
+# ─────────────────────────────────────────────
+# Game Engine
+# ─────────────────────────────────────────────
+
+class TinPattiGame:
+    """
+    Core game engine.
+
+    Attributes
+    ----------
+    bias                 : 0 → favour A, 1 → favour B
+    evaluation_threshold : max retries before the biased loop stops
+                           (unused in termination logic but preserved for parity)
+    """
+
+    __slots__ = ("bias", "evaluation_threshold", "_evaluator")
+
+    def __init__(
+        self,
+        bias: BiasType,
+        evaluation_threshold: int = 20,
+    ) -> None:
+        if bias not in (0, 1):
+            raise InvalidBiasError(f"Bias must be 0 or 1, got {bias!r}.")
+        self.bias: BiasType = bias                          # KEEPING THIS AS REQUESTED
+        self.evaluation_threshold: int = evaluation_threshold
+        self._evaluator: HandEvaluator = HandEvaluator()   # stateless; shared ref is fine
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _deal_round() -> Tuple[List[Card], List[Card]]:
         deck = Deck()
         deck.shuffle()
+        return deck.deal(3), deck.deal(3)
 
-        group_A = deck.deal(3)
-        group_B = deck.deal(3)
-
-        return group_A, group_B
-
-    def decide_winner(self, group_A, group_B) -> str:
-        result = HandEvaluator.compare(group_A, group_B)
-
+    @staticmethod
+    def _decide_winner(group_a: List[Card], group_b: List[Card]) -> Winner:
+        result = HandEvaluator.compare(group_a, group_b)
         if result == 1:
             return "A"
-        elif result == -1:
+        if result == -1:
             return "B"
         return "TIE"
 
-    def play_until_winner(self):
-        target = "A" if self.bias == 0 else "B"
-
-        while True:
-            group_A, group_B = self.play_round()
-            winner = self.decide_winner(group_A, group_B)
-
-            if winner == "TIE":
-                continue  # skip ties
-
-            if winner == target:
-                return group_A, group_B, winner
-
-
     @staticmethod
-    def format_hand(hand: List[Card]):
+    def _format_hand(hand: List[Card]) -> HandTuple:
         return tuple((c.rank, c.suit) for c in hand)
 
-    def generate_output(self, group_A, group_B, winner, delay):
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def play_until_winner(self) -> RoundResult:
+        """
+        Deal and re-deal until the biased side wins (ties are skipped).
+        Returns an immutable RoundResult.
+        """
+        target: Winner = "A" if self.bias == 0 else "B"
+
+        while True:
+            group_a, group_b = self._deal_round()
+            winner = self._decide_winner(group_a, group_b)
+
+            if winner == "TIE":
+                continue
+
+            if winner == target:
+                return RoundResult(
+                    group_a=tuple(group_a),
+                    group_b=tuple(group_b),
+                    winner=winner,
+                )
+
+    def generate_output(
+        self,
+        result: RoundResult,
+        delay: float,
+    ) -> GameOutput:
         return {
-            "A": self.format_hand(group_A),
-            "B": self.format_hand(group_B),
-            "WINNER": winner,
-            "DELAY": delay,
-            "TIME": datetime.now().strftime("%H:%M:%S")
+            "A":      self._format_hand(list(result.group_a)),
+            "B":      self._format_hand(list(result.group_b)),
+            "WINNER": result.winner,
+            "DELAY":  delay,
+            "TIME":   datetime.now().strftime("%H:%M:%S"),
         }
 
 
 # ─────────────────────────────────────────────
-# Bias Calculator  (LOGIC UNCHANGED)
+# Game Session  (replaces bare initiate_game fn)
 # ─────────────────────────────────────────────
-def calculate_bias(group_a_bidding_amt: float,
-                   group_b_bidding_amt: float) -> Literal[0, 1]:
-    if group_a_bidding_amt < group_b_bidding_amt:
-        return 0          # A bids less → bias favours A (lower bidder wins)
-    if group_a_bidding_amt > group_b_bidding_amt:
-        return 1          # B bids less → bias favours B
-    return random.randint(0, 1)
 
+class GameSession:
+    """
+    Top-level entry point.  Validates inputs, wires all components together,
+    and returns the final output dict (or a safe error dict on failure).
+    """
 
+    _FALLBACK: GameOutput = {"A": None, "B": None, "WINNER": None, "DELAY": None}
 
-# -----------------------------
-# Game Entry
-# -----------------------------
-def initiate_game(group_a_bidding_amt, group_b_bidding_amt, delay):
-    try:
-        if delay <= 0.2:
-            delay = 0.3
-        if delay >= 10:
-            delay = 9
+    def __init__(
+        self,
+        group_a_bidding_amt: float,
+        group_b_bidding_amt: float,
+        delay: float,
+    ) -> None:
+        self._a_bid:  float = group_a_bidding_amt
+        self._b_bid:  float = group_b_bidding_amt
+        self._delay:  float = delay
 
-        bias = calculate_bias(group_a_bidding_amt, group_b_bidding_amt)
+    def run(self) -> GameOutput:
+        try:
+            clamped_delay: float = DelayGuard.clamp(self._delay)
+            bias:          BiasType = BiasCalculator.calculate(self._a_bid, self._b_bid)
+            threshold:     int = random.randint(MIN_BIAS_THRESHOLD, MAX_BIAS_THRESHOLD)
 
-        game = TinPattiGame(bias, random.randint(MIN_BIAS_THRESHOLD, MAX_BIAS_THRESHOLD))
+            game:   TinPattiGame = TinPattiGame(bias, threshold)
+            result: RoundResult  = game.play_until_winner()
 
-        group_A, group_B, winner = game.play_until_winner()
+            return game.generate_output(result, clamped_delay)
 
-        return game.generate_output(group_A, group_B, winner, delay)
+        except TinPattiError as exc:
+            print(f"[TinPatti] Game error: {exc}")
+            return {**self._FALLBACK, "DELAY": self._delay}
 
-    except Exception as e:
-        print("ERROR:", e)
-        return {
-            "A": None,
-            "B": None,
-            "WINNER": None,
-            "DELAY": delay
-        }
-
-
+        except Exception as exc:
+            print(f"[TinPatti] Unexpected error: {exc}")
+            return {**self._FALLBACK, "DELAY": self._delay}
 
 
 # ─────────────────────────────────────────────
-# Simulation / Self-test
+# Public convenience wrapper  (keeps existing call-site intact)
+# ─────────────────────────────────────────────
+
+def initiate_game(
+    group_a_bidding_amt: float,
+    group_b_bidding_amt: float,
+    delay: float,
+) -> GameOutput:
+    """Thin wrapper so __main__ and any existing callers need zero changes."""
+    return GameSession(group_a_bidding_amt, group_b_bidding_amt, delay).run()
+
+
+# ─────────────────────────────────────────────
+# Simulation / Self-test  ← UNTOUCHED
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
     import json

@@ -35,24 +35,32 @@ There are 3 types of users:
 
 ---
 
-## ⚠️ HIERARCHY RULES (STRICT)
+## ⚠️ HIERARCHY RULES (UPDATED — VERY IMPORTANT)
 
 1. Admin can create Agents only
-
 2. Agents can create Agents and Users
-
 3. Hierarchical ownership (tree structure)
 
-4. If an Agent is deleted:
+---
 
-   * All child Agents and Users must be reassigned to its parent Agent
+### 🗑️ DELETION RULES (STRICT — UPDATED)
 
-5. Top-level Agents (under Admin):
+1. **Admin can delete ONLY its immediate Agents**
 
-   * Cannot be deleted directly
-   * Their children must first be reassigned to another top-level Agent
+   * When Admin deletes an Agent:
 
-6. Admin can NEVER be deleted
+     * That Agent AND **ALL its descendants (Agents + Users)** are permanently deleted
+
+2. **Agents can delete ONLY their immediate children**
+
+   * If deleting a **User** → delete that user
+   * If deleting an **Agent** → delete that agent AND **ALL its descendants**
+
+3. **No reassignment of children**
+
+   * Deletion always results in full subtree removal
+
+4. **Admin can NEVER be deleted**
 
 ---
 
@@ -70,14 +78,14 @@ There are 3 types of users:
 
 Transactions are ONLY allowed as:
 
-* Admin → its child Agents
-* Agent → its child Agents
-* Agent → its child Users
+* Admin → its immediate child Agents
+* Agent → its immediate child Agents
+* Agent → its immediate child Users
 
 ❌ NOT ALLOWED:
 
 * Direct balance overwrite
-* Arbitrary transfers outside hierarchy
+* Transfers outside hierarchy
 
 ---
 
@@ -85,7 +93,7 @@ Transactions are ONLY allowed as:
 
 * All balance updates MUST happen via **transactions**
 * Use **ledger-based accounting**
-* Balance should be **derived**, not directly stored (or if stored, must be consistent with ledger)
+* Balance should be **derived** (or strictly validated if stored)
 
 ---
 
@@ -108,12 +116,7 @@ For every money-related method, include:
 ### Game Execution Model
 
 * Only **ONE instance of a specific game** runs at a time
-* BUT multiple different games can run in parallel
-
-Example:
-
-* Teen Patti → 1 instance
-* Another game → 1 instance
+* Multiple different games can run in parallel
 
 ---
 
@@ -129,21 +132,17 @@ Events include:
 * game_started
 * card_dealt
 * game_result
-* server_state (for reconnect sync)
+* server_state
 
 Design must include:
 
-* Separation of:
-
-  * Game Engine
-  * Game Orchestrator
-  * Realtime Gateway
+* Game Engine
+* Game Orchestrator
+* Realtime Gateway
 
 ---
 
-## 🎯 BETTING & GAME FLOW (IMPORTANT DOMAIN LOGIC)
-
-This is generic logic that will apply to games:
+## 🎯 BETTING & GAME FLOW
 
 1. Betting window: **30 seconds**
 2. Players bet on one of two options (A or B)
@@ -155,60 +154,50 @@ This is generic logic that will apply to games:
 
 Case 1:
 
-* Both A and B have 0 bets → game still runs
-* No deduction, no reward
+* Both A and B have 0 bets → game runs, no effect
 
 Case 2:
 
-* One side has 0, other non-zero → game runs
+* One side 0 → game runs normally
 
 Case 3:
 
 * Both have bets:
 
-  * Losing side → all bets lost (0)
+  * Losing side → all bets lost
   * Winning side payout:
 
 ```
 final_amount =
-    (current_balance after deduction)
+    (balance after deduction)
     + bet_amount
-    + (bet_amount - 0.5% of bet_amount)
+    + (bet_amount - 5% of bet_amount)
 ```
 
 ---
 
 ### ⚠️ IMPORTANT
 
-* Bet amount must be **deducted BEFORE game starts**
-* Settlement happens AFTER result
+* Bet amount deducted BEFORE game starts
+* Settlement AFTER result
 
 ---
 
 ## 🧱 OUTPUT REQUIREMENTS
 
-### 1. Clarifying Questions / Assumptions
-
-* Some additional clarity may come later from draw.io diagram
-* Clearly state assumptions if made
+### 1. Clarifications / Assumptions
 
 ---
 
 ### 2. Folder Structure
 
-Must include clear modular design:
-
 ```
 project_root/
-│
 ├── models/
 ├── services/
 ├── core/
 ├── transactions/
 ├── games/
-│   ├── base_game.py
-│   ├── teen_patti/
-│   └── ...
 ├── realtime/
 ├── utils/
 └── main.py
@@ -224,44 +213,37 @@ Explain:
 * Concurrency safety
 * Transaction safety
 * Game extensibility
-* WebSocket integration
+* Realtime flow
 
 ---
 
 ## 🧱 PART 1: MODEL CLASSES (SINGLE SCRIPT)
 
-These simulate DB tables (framework-independent).
+Must include:
 
-### Must include:
-
-* BaseUser (common parent)
+* BaseUser
 * Admin
 * Agent
 * User
 * Wallet
-* Transaction (ledger)
+* Transaction
 * Bet
 * GameSession
 * GameResult
 
----
+Each class:
 
-### For EACH class:
-
-* Add file location comment
+* File location comment
 * Attributes with types
-* Relationships (parent_id, etc.)
-* Methods:
-
-  * Only signatures
-  * Detailed comments explaining logic
-  * NO implementation
+* Relationships
+* Method signatures ONLY
+* Detailed comments (NO implementation)
 
 ---
 
-## ⚙️ PART 2: SERVICE / LLD CLASSES (SINGLE SCRIPT)
+## ⚙️ PART 2: SERVICE / LLD CLASSES
 
-### Must include:
+Must include:
 
 * AdminService
 * AgentService
@@ -272,14 +254,12 @@ These simulate DB tables (framework-independent).
 * GameService
 * GameOrchestrator
 * HierarchyService
-* RealtimeService (Socket handling abstraction)
+* RealtimeService
 
----
-
-### Each method must include:
+Each method:
 
 * Type hints
-* Step-by-step logic in comments
+* Step-by-step comments
 * Edge cases
 * Failure scenarios
 
@@ -287,9 +267,7 @@ These simulate DB tables (framework-independent).
 
 ## 🎮 GAME EXTENSIBILITY
 
-Design a BaseGame class:
-
-Methods:
+BaseGame must include:
 
 * create_session()
 * start_betting()
@@ -298,37 +276,32 @@ Methods:
 * calculate_result()
 * settle_bets()
 
-Explain:
-
-* How new games plug in
-* How GameOrchestrator uses them
-* How minimal changes are required
+Explain plug-in architecture clearly.
 
 ---
 
 ## 🧩 DESIGN CONSTRAINTS
 
-* Follow SOLID principles
-* Prefer composition over inheritance
-* Keep services loosely coupled
-* Design for future microservices split
-* Keep services mostly stateless (except orchestrator where needed)
+* SOLID principles
+* Loose coupling
+* Composition preferred
+* Future microservice-ready
+* Mostly stateless services
 
 ---
 
 ## 🚫 WHAT NOT TO DO
 
-* Do NOT write actual business logic
-* Do NOT use frameworks (no Django/FastAPI ORM)
-* Do NOT skip transaction safety comments
-* Do NOT simplify hierarchy rules
+* No framework usage
+* No business logic implementation
+* No skipping transaction safety
+* No simplification of hierarchy
 
 ---
 
 ## 📌 FUTURE INPUT
 
-* System will be refined using draw.io diagrams and existing Python files
-* Design must be adaptable
+* Will be refined via draw.io and existing code
 
 ---
 
@@ -337,7 +310,7 @@ Explain:
 1. Clarifications / Assumptions
 2. Folder Structure
 3. High-Level Design
-4. Model Classes (single script)
-5. Service / LLD Classes (single script)
+4. Model Classes
+5. Service Classes
 
-Make the design detailed enough so that another AI can directly convert it into production-ready backend code.
+Design must be detailed enough for direct production conversion.

@@ -1,6 +1,6 @@
 <mxfile host="Electron">
   <diagram name="Page-1" id="7H3hBwW4NE-gTDxBqCmD">
-    <mxGraphModel dx="1908" dy="1622" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="2260" dy="1796" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -205,7 +205,7 @@
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-68" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=0;whiteSpace=wrap;html=1;" value="user id and current holding and creation date" vertex="1">
           <mxGeometry height="30" width="344.0119148439097" x="45.50944718628624" y="130" as="geometry" />
         </mxCell>
-        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-69" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove user" vertex="1">
+        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-69" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove" vertex="1">
           <mxGeometry height="30" width="97.23330315684959" x="478.29863037701136" y="130" as="geometry" />
         </mxCell>
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-70" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="actiate" vertex="1">
@@ -220,7 +220,7 @@
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-73" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=0;whiteSpace=wrap;html=1;" value="user id and current holding and creation date" vertex="1">
           <mxGeometry height="30" width="344.0119148439097" x="45.50944718628624" y="180" as="geometry" />
         </mxCell>
-        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-74" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove user" vertex="1">
+        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-74" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove" vertex="1">
           <mxGeometry height="30" width="97.23330315684959" x="478.29863037701136" y="180" as="geometry" />
         </mxCell>
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-75" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="actiate" vertex="1">
@@ -235,7 +235,7 @@
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-78" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=0;whiteSpace=wrap;html=1;" value="user id and current holding and creation date" vertex="1">
           <mxGeometry height="30" width="344.0119148439097" x="45.50944718628624" y="220" as="geometry" />
         </mxCell>
-        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-79" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove user" vertex="1">
+        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-79" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove" vertex="1">
           <mxGeometry height="30" width="97.23330315684959" x="478.29863037701136" y="220" as="geometry" />
         </mxCell>
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-80" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="deactiate" vertex="1">
@@ -250,7 +250,7 @@
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-83" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=0;whiteSpace=wrap;html=1;" value="agent id and current holding and creation date" vertex="1">
           <mxGeometry height="30" width="344.0119148439097" x="45.50944718628624" y="270" as="geometry" />
         </mxCell>
-        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-84" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove user" vertex="1">
+        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-84" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove" vertex="1">
           <mxGeometry height="30" width="97.23330315684959" x="478.29863037701136" y="270" as="geometry" />
         </mxCell>
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-85" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="deactiate" vertex="1">
@@ -265,7 +265,7 @@
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-88" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=0;whiteSpace=wrap;html=1;" value="agent id and current holding and creation date" vertex="1">
           <mxGeometry height="30" width="344.0119148439097" x="45.50944718628624" y="310" as="geometry" />
         </mxCell>
-        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-89" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove user" vertex="1">
+        <mxCell id="bu2-0bFP1v2OuLZVY2Iv-89" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="remove" vertex="1">
           <mxGeometry height="30" width="97.23330315684959" x="478.29863037701136" y="310" as="geometry" />
         </mxCell>
         <mxCell id="bu2-0bFP1v2OuLZVY2Iv-90" parent="bu2-0bFP1v2OuLZVY2Iv-58" style="rounded=1;whiteSpace=wrap;html=1;" value="deactiate" vertex="1">
