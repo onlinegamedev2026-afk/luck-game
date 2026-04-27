@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Teen Patti — Group Battle (Synced)</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<!-- Socket.IO client — loaded from CDN, version must match server's flask-socketio -->
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+/* ── Reset & root ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --gold:      #c9a84c;
+  --gold-lt:   #e8c96a;
+  --gold-dim:  rgba(201,168,76,0.25);
+  --cream:     #f5ead8;
+  --red-card:  #c0392b;
+  --card-w:    68px;
+  --card-h:    96px;
+}
+
+body {
+  min-height: 100vh;
+  background: radial-gradient(ellipse at 50% 20%, #1b6636 0%, #0c3a1d 55%, #071509 100%);
+  font-family: 'DM Mono', monospace;
+  color: var(--cream);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2.5rem 1rem 4rem;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none;
+  background-image:
+    repeating-linear-gradient(0deg,   transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px),
+    repeating-linear-gradient(90deg,  transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  z-index: 0;
+}
+
+.wrap { position: relative; z-index: 1; width: 100%; max-width: 800px; }
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+header { text-align: center; margin-bottom: 2.5rem; }
+
+header h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2.2rem, 7vw, 3.6rem);
+  font-weight: 900;
+  color: var(--gold);
+  text-shadow: 0 0 40px rgba(201,168,76,0.35), 0 2px 0 rgba(0,0,0,0.5);
+  letter-spacing: 2px;
+}
+
+header p {
+  margin-top: 6px;
+  font-size: 11px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: rgba(245,234,216,0.4);
+}
+
+/* ── Engine label row ─────────────────────────────────────────────────────── */
+.engine-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid var(--gold-dim);
+  border-radius: 10px;
+  padding: 10px 16px;
+}
+
+.engine-name {
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--gold);
+  font-weight: 500;
+}
+
+/* ── Connection status pill ───────────────────────────────────────────────── */
+#conn-status {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  transition: all 0.3s;
+}
+#conn-status.connected    { background: rgba(46,204,113,0.15); border-color: rgba(46,204,113,0.4); color: #2ecc71; }
+#conn-status.disconnected { background: rgba(231,76,60,0.15);  border-color: rgba(231,76,60,0.4);  color: #e74c3c; }
+#conn-status.connecting   { background: rgba(201,168,76,0.15); border-color: rgba(201,168,76,0.4); color: var(--gold); }
+
+/* ── Status banner ────────────────────────────────────────────────────────── */
+#banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 20px;
+  margin-bottom: 1.5rem;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--gold-dim);
+  border-radius: 10px;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: rgba(245,234,216,0.7);
+  transition: border-color 0.3s;
+}
+
+#banner strong { color: var(--gold-lt); font-weight: 500; }
+
+.spinner {
+  width: 14px; height: 14px; flex-shrink: 0;
+  border: 2px solid rgba(201,168,76,0.25);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Group panels ─────────────────────────────────────────────────────────── */
+.groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 1.5rem;
+}
+
+.group-panel {
+  background: rgba(0,0,0,0.22);
+  border: 1px solid rgba(201,168,76,0.15);
+  border-radius: 16px;
+  padding: 1.4rem 1.25rem;
+  transition: border-color 0.4s, box-shadow 0.4s, opacity 0.5s;
+}
+
+.group-panel.highlight  { border-color: var(--gold);    box-shadow: 0 0 20px rgba(201,168,76,0.22); }
+.group-panel.winner     { border-color: var(--gold-lt); box-shadow: 0 0 40px rgba(201,168,76,0.4); }
+.group-panel.loser      { opacity: 0.38; }
+
+.g-tag   { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: rgba(245,234,216,0.35); margin-bottom: 3px; }
+.g-name  { font-family: 'Playfair Display', serif; font-size: 2.2rem; font-weight: 900; line-height: 1; margin-bottom: 1.1rem; }
+.g-name.a { color: #5dade2; }
+.g-name.b { color: #e8966a; }
+
+/* ── Card row ─────────────────────────────────────────────────────────────── */
+.cards-row {
+  display: flex;
+  gap: 10px;
+  min-height: var(--card-h);
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.slot {
+  width: var(--card-w); height: var(--card-h);
+  border: 1.5px dashed rgba(201,168,76,0.15);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.12);
+}
+
+.card {
+  width: var(--card-w); height: var(--card-h);
+  background: #fdf8f0;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.12);
+  box-shadow: 3px 5px 14px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+  animation: deal 0.38s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+@keyframes deal {
+  from { transform: translateY(-50px) scale(0.4) rotate(-12deg); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+.card .r { font-family: 'Playfair Display', serif; font-size: 19px; font-weight: 700; line-height: 1; }
+.card .s { font-size: 17px; line-height: 1; }
+.card.red   .r, .card.red   .s { color: var(--red-card); }
+.card.black .r, .card.black .s { color: #111; }
+
+/* ── Hand label ───────────────────────────────────────────────────────────── */
+.hand-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  border-top: 1px solid rgba(201,168,76,0.12);
+  padding-top: 0.7rem;
+  color: rgba(245,234,216,0.4);
+}
+.hand-label em { font-style: normal; color: var(--gold-lt); font-weight: 500; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.btn-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+button {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 9px;
+  padding: 11px 30px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(0,0,0,0.3);
+  color: var(--cream);
+  transition: all 0.15s;
+}
+button:hover:not(:disabled) { background: rgba(201,168,76,0.1); border-color: var(--gold); }
+button:active:not(:disabled) { transform: scale(0.97); }
+button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+#play-btn {
+  background: linear-gradient(135deg, #c9a84c 0%, #9a7022 100%);
+  border-color: transparent;
+  color: #1a0e00;
+  font-weight: 500;
+  min-width: 120px;
+}
+#play-btn:hover:not(:disabled) { background: linear-gradient(135deg, #e8c96a 0%, #c9a84c 100%); }
+
+/* ── Result box ───────────────────────────────────────────────────────────── */
+#result {
+  display: none;
+  text-align: center;
+  padding: 1.6rem 1.25rem;
+  border-radius: 14px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(0,0,0,0.32);
+  margin-bottom: 1.5rem;
+  animation: fadeUp 0.5s ease both;
+}
+@keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+#result .trophy   { font-size: 2.8rem; line-height: 1; margin-bottom: 6px; }
+#result .rtitle   { font-family: 'Playfair Display', serif; font-size: 1.9rem; font-weight: 900; color: var(--gold); margin-bottom: 5px; }
+#result .rsub     { font-size: 12px; letter-spacing: 1px; color: rgba(245,234,216,0.55); }
+#result .rtime    { font-size: 10px; letter-spacing: 2px; margin-top: 8px; color: rgba(245,234,216,0.3); }
+
+/* ── Last 10 Winners ──────────────────────────────────────────────────────── */
+#history-box {
+  background: rgba(0,0,0,0.2);
+  border: 1px solid rgba(201,168,76,0.1);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+
+.history-title {
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: rgba(245,234,216,0.35);
+  margin-bottom: 0.75rem;
+}
+
+.history-track {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.h-badge {
+  flex: 1;
+  height: 38px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Playfair Display', serif;
+  font-size: 1rem;
+  font-weight: 900;
+  border: 1px solid transparent;
+  transition: all 0.35s ease;
+  position: relative;
+}
+
+.h-badge.empty {
+  background: rgba(0,0,0,0.18);
+  border-color: rgba(201,168,76,0.08);
+  color: rgba(245,234,216,0.12);
+}
+
+.h-badge.a {
+  background: rgba(93,173,226,0.15);
+  border-color: rgba(93,173,226,0.4);
+  color: #5dade2;
+  box-shadow: 0 0 10px rgba(93,173,226,0.12);
+}
+
+.h-badge.b {
+  background: rgba(232,150,106,0.15);
+  border-color: rgba(232,150,106,0.4);
+  color: #e8966a;
+  box-shadow: 0 0 10px rgba(232,150,106,0.12);
+}
+
+.h-badge.newest {
+  transform: scale(1.12);
+  box-shadow: 0 0 18px rgba(201,168,76,0.35);
+  border-color: var(--gold) !important;
+}
+
+.h-badge .h-pos {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  font-weight: 400;
+  opacity: 0.4;
+  letter-spacing: 1px;
+  margin-top: 1px;
+}
+
+.history-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 0.6rem;
+  justify-content: flex-end;
+}
+.history-legend span {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: rgba(245,234,216,0.3);
+}
+.history-legend span.a { color: rgba(93,173,226,0.6); }
+.history-legend span.b { color: rgba(232,150,106,0.6); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Teen Patti</h1>
+    <p>Group Battle &mdash; A vs B &mdash; Live Sync</p>
+  </header>
+
+  <!-- Engine label (URL injected by server, hidden from user) -->
+  <input id="server-url" type="hidden" value="{{ server_url }}" />
+  <div class="engine-row">
+    <span class="engine-name">⚙ Tin Patti Engine</span>
+    <span id="conn-status" class="disconnected">Offline</span>
+  </div>
+
+  <!-- Status banner -->
+  <div id="banner">Connecting to server…</div>
+
+  <!-- Group panels -->
+  <div class="groups">
+    <div class="group-panel" id="panel-a">
+      <div class="g-tag">Group</div>
+      <div class="g-name a">A</div>
+      <div class="cards-row" id="cards-a">
+        <div class="slot"></div><div class="slot"></div><div class="slot"></div>
+      </div>
+      <div class="hand-label" id="hl-a">Hand &mdash; <em>—</em></div>
+    </div>
+
+    <div class="group-panel" id="panel-b">
+      <div class="g-tag">Group</div>
+      <div class="g-name b">B</div>
+      <div class="cards-row" id="cards-b">
+        <div class="slot"></div><div class="slot"></div><div class="slot"></div>
+      </div>
+      <div class="hand-label" id="hl-b">Hand &mdash; <em>—</em></div>
+    </div>
+  </div>
+
+  <!-- Buttons -->
+  <div class="btn-row">
+    <button id="play-btn"  onclick="startRound()" disabled>&#9654;&nbsp; Play</button>
+    <button id="reset-btn" onclick="hardReset()">Reset</button>
+  </div>
+
+  <!-- Result -->
+  <div id="result"></div>
+
+  <!-- Last 10 Winners -->
+  <div id="history-box">
+    <div class="history-title">Last 10 Winners</div>
+    <div class="history-track" id="history-track"></div>
+    <div class="history-legend">
+      <span class="a">■ Group A</span>
+      <span class="b">■ Group B</span>
+    </div>
+  </div>
+
+</div><!-- .wrap -->
+
+<script>
+'use strict';
+
+/* ── Display constants ──────────────────────────────────────────────────── */
+const SUIT_SYM  = { H:'♥', D:'♦', C:'♣', S:'♠' };
+const SUIT_COL  = { H:'red', D:'red', C:'black', S:'black' };
+const RANK_DISP = { T:'10', J:'J', Q:'Q', K:'K', A:'A' };
+
+/* ── State ──────────────────────────────────────────────────────────────── */
+let socket = null;
+let cardsA = [];   // cards dealt to A so far (each: [rank, suit])
+let cardsB = [];   // cards dealt to B so far
+
+/* ── Connection helpers ─────────────────────────────────────────────────── */
+function getServerUrl() {
+  return document.getElementById('server-url').value.trim().replace(/\/+$/, '');
+}
+
+function setConnStatus(state, label) {
+  const el = document.getElementById('conn-status');
+  el.className = state;
+  el.textContent = label;
+}
+
+/* ── Socket init ────────────────────────────────────────────────────────── */
+function initSocket() {
+  const url = getServerUrl();
+  socket = io(url, { transports: ['websocket', 'polling'] });
+
+  socket.on('connect', () => {
+    setConnStatus('connected', '● Live');
+    // server_state will arrive right after connect — don't set banner yet
+  });
+
+  socket.on('disconnect', () => {
+    setConnStatus('disconnected', '✕ Offline');
+    makeBanner('Lost connection. Press <strong>Connect</strong> to retry.');
+    document.getElementById('play-btn').disabled = true;
+  });
+
+  /*
+   * server_state — sent to THIS device only on connect/refresh.
+   * Contains everything that has already happened so we can catch up instantly.
+   *
+   * data = {
+   *   in_progress: bool,
+   *   cards_dealt: [ {group, rank, suit, draw_num}, ... ],  ← already dealt
+   *   winner: "A"|"B"|null,
+   *   time: str|null,
+   *   last_10_winners: [],
+   * }
+   */
+  socket.on('server_state', (data) => {
+    renderHistory(data.last_10_winners || []);
+
+    if (!data.in_progress) {
+      // No game running — normal idle state
+      makeBanner('Connected — press <strong>Play</strong> to start');
+      document.getElementById('play-btn').disabled = false;
+
+      // If a completed game result is available, show it
+      if (data.winner) {
+        // Replay all 6 cards instantly then show result
+        clearBoard();
+        replayCardsInstantly(data.cards_dealt);
+        showResult(data.winner, data.time || '');
+      }
+      return;
+    }
+
+    // Game IS in progress — lock play button
+    lockButtons();
+
+    // Replay already-dealt cards instantly (no animation delay)
+    clearBoard();
+    replayCardsInstantly(data.cards_dealt);
+
+    const count = data.cards_dealt.length;
+    if (count === 0) {
+      makeBanner('Game started — dealing cards…', true);
+    } else {
+      makeBanner(`<strong>${count} of 6</strong> cards dealt — catching up…`, true);
+    }
+    // From here, live card_dealt events will continue the game normally
+  });
+
+  /*
+   * game_started — broadcast to ALL devices when a new game begins.
+   * For devices already on the page (not refreshing), this resets the board.
+   */
+  socket.on('game_started', () => {
+    lockButtons();
+    clearBoard();
+    cardsA = [];
+    cardsB = [];
+    makeBanner('Game started — dealing cards…', true);
+  });
+
+  /*
+   * card_dealt — broadcast live as each card is dealt server-side.
+   * Both fresh devices AND refreshed late-joiners receive these.
+   * (Late joiners already have the past cards from server_state,
+   *  so they simply continue from wherever they left off.)
+   */
+  socket.on('card_dealt', (data) => {
+    // data = { group, rank, suit, draw_num }
+    const card = [data.rank, data.suit];
+    if (data.group === 'A') {
+      cardsA.push(card);
+      renderRow('cards-a', cardsA);
+      setHandLabel('hl-a', cardsA);
+      setPanelState('panel-a', 'highlight');
+      setPanelState('panel-b', '');
+    } else {
+      cardsB.push(card);
+      renderRow('cards-b', cardsB);
+      setHandLabel('hl-b', cardsB);
+      setPanelState('panel-b', 'highlight');
+      setPanelState('panel-a', '');
+    }
+    makeBanner(`Draw <strong>${data.draw_num} of 6</strong> &mdash; Group <strong>${data.group}</strong> picks a card`);
+  });
+
+  /*
+   * game_result — broadcast when all cards are dealt and winner is decided.
+   */
+  socket.on('game_result', (data) => {
+    renderHistory(data.last_10_winners || []);
+    setPanelState('panel-a', '');
+    setPanelState('panel-b', '');
+    showResult(data.winner, data.time || '');
+    unlockButtons();
+  });
+
+  socket.on('play_rejected', (data) => {
+    makeBanner('⚠ ' + (data.reason || 'Game in progress on another device.'));
+    unlockButtons();
+  });
+
+  socket.on('game_error', (data) => {
+    makeBanner('Server error: ' + (data.message || 'unknown'));
+    unlockButtons();
+  });
+}
+
+/* ── Catch-up: render already-dealt cards with no animation ─────────────── */
+function replayCardsInstantly(cards_dealt) {
+  cardsA = [];
+  cardsB = [];
+  for (const c of (cards_dealt || [])) {
+    const card = [c.rank, c.suit];
+    if (c.group === 'A') cardsA.push(card);
+    else                 cardsB.push(card);
+  }
+  if (cardsA.length) { renderRow('cards-a', cardsA); setHandLabel('hl-a', cardsA); }
+  if (cardsB.length) { renderRow('cards-b', cardsB); setHandLabel('hl-b', cardsB); }
+}
+
+/* ── UI helpers ─────────────────────────────────────────────────────────── */
+function makeBanner(html, spin = false) {
+  document.getElementById('banner').innerHTML =
+    (spin ? '<div class="spinner"></div>' : '') + html;
+}
+
+function lockButtons() {
+  document.getElementById('play-btn').disabled  = true;
+  document.getElementById('reset-btn').disabled = true;
+}
+
+function unlockButtons() {
+  document.getElementById('play-btn').disabled  = !(socket && socket.connected);
+  document.getElementById('reset-btn').disabled = false;
+}
+
+function makeCard([rank, suit]) {
+  const d = document.createElement('div');
+  d.className = `card ${SUIT_COL[suit]}`;
+  d.innerHTML = `<span class="r">${RANK_DISP[rank] || rank}</span><span class="s">${SUIT_SYM[suit]}</span>`;
+  return d;
+}
+
+function renderRow(rowId, drawn) {
+  const row = document.getElementById(rowId);
+  row.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    if (drawn[i]) row.appendChild(makeCard(drawn[i]));
+    else { const s = document.createElement('div'); s.className = 'slot'; row.appendChild(s); }
+  }
+}
+
+function setHandLabel(id, hand) {
+  const el = document.getElementById(id);
+  if (!hand.length) { el.innerHTML = 'Hand &mdash; <em>—</em>'; return; }
+  el.innerHTML = `Hand &mdash; <em>${hand.length} card${hand.length !== 1 ? 's' : ''} dealt</em>`;
+}
+
+function setPanelState(id, state) {
+  const el = document.getElementById(id);
+  el.classList.remove('highlight', 'winner', 'loser');
+  if (state) el.classList.add(state);
+}
+
+function clearBoard() {
+  ['panel-a','panel-b'].forEach(id => setPanelState(id, ''));
+  renderRow('cards-a', []); renderRow('cards-b', []);
+  setHandLabel('hl-a', []); setHandLabel('hl-b', []);
+  const r = document.getElementById('result');
+  r.style.display = 'none'; r.innerHTML = '';
+}
+
+function showResult(winner, time) {
+  const resultEl = document.getElementById('result');
+  resultEl.style.display = 'block';
+  if (winner === 'A') {
+    resultEl.innerHTML = `<div class="trophy">🏆</div><div class="rtitle">Group A Wins!</div><div class="rsub">Winner decided by server</div>${time ? `<div class="rtime">${time}</div>` : ''}`;
+    setPanelState('panel-a', 'winner');
+    setPanelState('panel-b', 'loser');
+    makeBanner('<strong>Group A wins!</strong> &mdash; press Play for another round');
+  } else if (winner === 'B') {
+    resultEl.innerHTML = `<div class="trophy">🏆</div><div class="rtitle">Group B Wins!</div><div class="rsub">Winner decided by server</div>${time ? `<div class="rtime">${time}</div>` : ''}`;
+    setPanelState('panel-b', 'winner');
+    setPanelState('panel-a', 'loser');
+    makeBanner('<strong>Group B wins!</strong> &mdash; press Play for another round');
+  } else {
+    resultEl.innerHTML = `<div class="trophy">🤝</div><div class="rtitle">It\'s a Draw!</div><div class="rsub">Declared by server</div>${time ? `<div class="rtime">${time}</div>` : ''}`;
+    makeBanner('Draw! &mdash; press Play for another round');
+  }
+}
+
+/* ── History ────────────────────────────────────────────────────────────── */
+function renderHistory(last10) {
+  const track = document.getElementById('history-track');
+  track.innerHTML = '';
+  for (let i = 0; i < 10; i++) {
+    const badge = document.createElement('div');
+    const w = last10 && last10[i] ? last10[i] : null;
+    if (!w) {
+      badge.className = 'h-badge empty';
+      badge.textContent = '—';
+    } else {
+      badge.className = `h-badge ${w.toLowerCase()}${i === last10.length - 1 ? ' newest' : ''}`;
+      badge.textContent = w;
+    }
+    const pos = document.createElement('div');
+    pos.className = 'h-pos';
+    pos.textContent = `#${i + 1}`;
+    badge.appendChild(pos);
+    track.appendChild(badge);
+  }
+}
+
+/* ── Play button ────────────────────────────────────────────────────────── */
+function startRound() {
+  if (!socket || !socket.connected) return;
+  socket.emit('request_play', {
+    group_a_bid: Math.floor(Math.random() * 290) + 10,
+    group_b_bid: Math.floor(Math.random() * 290) + 10
+  });
+}
+
+/* ── Reset (local only) ─────────────────────────────────────────────────── */
+function hardReset() {
+  clearBoard();
+  cardsA = []; cardsB = [];
+  makeBanner('Board cleared — press <strong>Play</strong> to start');
+}
+
+/* ── Init ───────────────────────────────────────────────────────────────── */
+renderHistory([]);
+initSocket();
+</script>
+</body>
+</html>
