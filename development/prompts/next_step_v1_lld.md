@@ -1,13 +1,18 @@
-🚀 Next Step
+Backend Framework: FastAPI
+Database: PostgreSQL
+Cache / Realtime State: Redis
+WebSocket: FastAPI WebSocket / Socket.IO-compatible layer
+Background Jobs: Celery
+Message Broker: Redis or RabbitMQ
 
-Now do this:
 
-Feed this prompt to AI
-Share the output here
 
-I’ll:
-
-Audit the design
-Fix hidden flaws (there will be some)
-Help convert it into your FastAPI + PostgreSQL production backend
-if redis required 
+User cherry for
+-----------------------
+Email sending
+OTP sending
+Report generation
+Download file preparation
+Notification jobs
+Cleaning expired sessions
+Retrying failed non-money tasks

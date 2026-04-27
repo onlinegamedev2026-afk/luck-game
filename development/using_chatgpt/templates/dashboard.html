@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <strong>{{ actor.display_name }}</strong>
+      <span>{{ actor.role }} · {{ "%.3f"|format(actor.balance) }} units</span>
+    </div>
+    <nav>
+      <a href="/game">Play Game</a>
+      <a href="/download/transactions">Transactions</a>
+      <a href="/download/children">Children CSV</a>
+      <form method="post" action="/logout"><button>Logout</button></form>
+    </nav>
+  </header>
+  <main class="layout">
+    {% if error %}<section class="alert error">{{ error }}</section>{% endif %}
+    {% if notice %}<section class="alert notice">{{ notice }}</section>{% endif %}
+    {% if actor.role != "USER" %}
+    <section class="panel">
+      <h2>Create Child</h2>
+      <form class="grid-form" method="post" action="/children">
+        <input name="username" placeholder="Username" required>
+        <input name="display_name" placeholder="Display name" required>
+        <select name="role">
+          {% if actor.role == "ADMIN" %}<option value="AGENT">Agent</option>{% endif %}
+          {% if actor.role == "AGENT" %}<option value="AGENT">Agent</option><option value="USER">User</option>{% endif %}
+        </select>
+        <input name="password" placeholder="Password" required>
+        <button>Create</button>
+      </form>
+    </section>
+    <section class="panel">
+      <form class="search" method="get" action="/dashboard">
+        <input name="q" value="{{ q }}" placeholder="Search child by name or id">
+        <button>Search</button>
+      </form>
+      <div class="table">
+        {% for child in children %}
+        <article class="row">
+          <div>
+            <strong>{{ child.display_name }}</strong>
+            <span>{{ child.role }} · {{ child.username }} · {{ child.id[:8] }} · {{ "%.3f"|format(child.balance) }}</span>
+          </div>
+          <form method="post" action="/wallet/{{ child.id }}/add"><input name="amount" value="10.000"><button>+ Money</button></form>
+          <form method="post" action="/wallet/{{ child.id }}/deduct"><input name="amount" value="10.000"><button>- Money</button></form>
+          <form method="post" action="/children/{{ child.id }}/status">
+            <input type="hidden" name="status" value="{{ 'INACTIVE' if child.status == 'ACTIVE' else 'ACTIVE' }}">
+            <button>{{ 'Deactivate' if child.status == 'ACTIVE' else 'Activate' }}</button>
+          </form>
+          <form method="post" action="/children/{{ child.id }}/delete"><button class="danger">Remove</button></form>
+        </article>
+        {% else %}
+        <p class="muted">No immediate children yet.</p>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+    <section class="panel">
+      <h2>Recent Ledger</h2>
+      <div class="ledger">
+        {% for tx in transactions %}
+        <div><span>{{ tx.created_at }}</span><strong>{{ tx.transaction_type }}</strong><span>{{ tx.amount }}</span></div>
+        {% else %}
+        <p class="muted">No transactions yet.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+</body>
+</html>

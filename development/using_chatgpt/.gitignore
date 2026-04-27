@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.log
+luck_game.db
+luck_game.db-*
+.env
+.venv/
+redis_data/

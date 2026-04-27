@@ -62,6 +62,76 @@ There are 3 types of users:
 
 4. **Admin can NEVER be deleted**
 
+
+---
+
+## UI / FLOW ALIGNMENT FROM DRAW.IO
+
+The LLD must also reflect the uploaded draw.io flow:
+
+1. Login screens:
+
+   * Admin Login
+   * Agent Login
+   * User Login
+   * Captcha / OTP where applicable
+
+2. Admin Home:
+
+   * Shows wallet amount in hand
+   * Lists immediate child agents only
+   * Search agents by name or id
+   * Add Agent
+   * Remove Agent
+   * Activate / Deactivate Agent
+   * Add money / deduct money for immediate child agents
+   * Download last 30 days transaction details
+   * Download all agent details
+   * Change password
+   * Play game
+
+3. Agent Home:
+
+   * Shows wallet amount in hand
+   * Lists immediate child agents and users
+   * Search child agent/user by name or id
+   * Add Agent
+   * Add User
+   * Remove immediate child agent/user
+   * Activate / Deactivate child agent/user
+   * Add money / deduct money for immediate children
+   * Download last 30 days transaction details
+   * Download all child agent/user details
+   * Change password
+   * Play game
+
+4. User Home:
+
+   * Shows client id
+   * Shows wallet amount
+   * Can play available games
+   * Cannot create users or agents
+   * Cannot transfer money
+
+5. Deletion rule must strictly match:
+
+   * Admin can delete only immediate child agents.
+   * Agent can delete only immediate child agents/users.
+   * If deleted child is an agent, delete the entire subtree below that agent.
+   * No reassignment of descendants.
+
+6. Wallet buttons `+ money` and `- money` must be modeled as ledger transactions only.
+
+   * No direct balance overwrite.
+   * Only parent → immediate child transaction direction is valid.
+   * Deduct money should be represented as a reverse/negative ledger entry initiated by the authorized parent, not a direct mutation.
+
+7. Activate / Deactivate:
+
+   * Soft status change only.
+   * Deactivated accounts cannot login, play games, place bets, or receive/send wallet transactions.
+   * Deactivation does NOT delete wallet ledger history.
+
 ---
 
 ## 💰 WALLET & TRANSACTION RULES (CRITICAL)
