@@ -23,16 +23,31 @@
     {% if error %}<section class="alert error">{{ error }}</section>{% endif %}
     {% if notice %}<section class="alert notice">{{ notice }}</section>{% endif %}
     {% if actor.role != "USER" %}
+    {% if actor.role == "ADMIN" %}
+    <section class="panel">
+      <h2>Admin Money</h2>
+      <form class="grid-form admin-money" method="post" action="/wallet/admin/adjust">
+        <input name="amount" value="100.000" inputmode="decimal" required>
+        <select name="direction">
+          <option value="add">Add</option>
+          <option value="deduct">Subtract</option>
+        </select>
+        <button>Update</button>
+      </form>
+    </section>
+    {% endif %}
     <section class="panel">
       <h2>Create Child</h2>
-      <form class="grid-form" method="post" action="/children">
-        <input name="username" placeholder="Username" required>
-        <input name="display_name" placeholder="Display name" required>
+      <form class="grid-form" method="post" action="/children" id="create-child-form">
+        <input name="display_name" id="display-name-input" placeholder="Display name" required>
+        <input name="username" id="username-input" placeholder="User ID" required>
+        <input name="email" type="email" placeholder="Email">
         <select name="role">
           {% if actor.role == "ADMIN" %}<option value="AGENT">Agent</option>{% endif %}
           {% if actor.role == "AGENT" %}<option value="AGENT">Agent</option><option value="USER">User</option>{% endif %}
         </select>
-        <input name="password" placeholder="Password" required>
+        <input name="password" id="password-input" placeholder="Password" required>
+        <button type="button" id="generate-credentials">Generate ID and Password</button>
         <button>Create</button>
       </form>
     </section>
@@ -73,5 +88,23 @@
       </div>
     </section>
   </main>
+  <script>
+    const generateButton = document.querySelector("#generate-credentials");
+    if (generateButton) {
+      generateButton.addEventListener("click", async () => {
+        const nameInput = document.querySelector("#display-name-input");
+        const name = nameInput.value.trim();
+        if (!name) {
+          nameInput.focus();
+          return;
+        }
+        const response = await fetch(`/credentials/generate?display_name=${encodeURIComponent(name)}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        document.querySelector("#username-input").value = data.username;
+        document.querySelector("#password-input").value = data.password;
+      });
+    }
+  </script>
 </body>
 </html>

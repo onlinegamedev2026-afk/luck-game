@@ -139,7 +139,7 @@ class GameOrchestrator:
             bet_amount = money(bet["amount"])
             fee = money(bet_amount * settings.payout_fee_rate)
             payout = money(bet_amount + (bet_amount - fee))
-            system_actor = Actor("system", "system", "System", "SYSTEM", "ACTIVE", None, pool_wallet, Decimal("0.000"))
+            system_actor = Actor("system", "system", "System", None, "SYSTEM", "ACTIVE", None, pool_wallet, Decimal("0.000"))
             self.ledger.transfer(
                 actor=system_actor,
                 from_wallet_id=pool_wallet,

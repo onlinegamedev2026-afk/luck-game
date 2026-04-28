@@ -19,6 +19,9 @@ Default admin login:
 
 - Username: `admin`
 - Password: `admin123`
+- Email: `ADMIN_EMAIL_ID` from `.env`
+
+Admin and agent logins require captcha plus email OTP. Configure `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and related SMTP values in `.env` so the Celery worker can send OTP and account-creation emails.
 
 ## Notes
 
@@ -26,6 +29,8 @@ Default admin login:
 - The settings file includes PostgreSQL, Redis, and Celery URLs for the production stack requested in the prompts.
 - Wallet movement is ledger-only: no UI route overwrites balances directly.
 - Admin can create/delete immediate agents. Agents can create/delete immediate agents and users.
+- The Create Child form can generate the user ID from `dev_time_utils.classes.Person.generate_id()` and a strong 8-10 character password.
+- New admin wallets start at `0.000`; existing database balances are preserved.
 - Deleting an agent removes its entire subtree, matching the draw.io and prompt rules.
 
 ## Docker With Local PostgreSQL

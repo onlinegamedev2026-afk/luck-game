@@ -61,6 +61,7 @@ def init_db() -> None:
                 id TEXT PRIMARY KEY,
                 username TEXT NOT NULL UNIQUE,
                 display_name TEXT NOT NULL,
+                email TEXT NULL,
                 role TEXT NOT NULL CHECK(role IN ('ADMIN','AGENT','USER','SYSTEM')),
                 password_hash TEXT NOT NULL,
                 parent_id TEXT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -131,14 +132,26 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_wallet_tx_to ON wallet_transactions(to_wallet_id, created_at DESC);
             """
         )
+        ensure_schema(conn)
         ensure_seed_data(conn)
     finally:
         conn.close()
 
 
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("ALTER TABLE accounts ADD COLUMN email TEXT NULL")
+    except Exception:
+        pass
+
+
 def ensure_seed_data(conn: sqlite3.Connection) -> None:
     admin = conn.execute("SELECT id FROM accounts WHERE role='ADMIN'").fetchone()
     if admin:
+        conn.execute(
+            "UPDATE accounts SET email=? WHERE role='ADMIN' AND (email IS NULL OR email='')",
+            (settings.admin_email_id,),
+        )
         return
     admin_id = str(uuid.uuid4())
     wallet_id = str(uuid.uuid4())
@@ -147,16 +160,16 @@ def ensure_seed_data(conn: sqlite3.Connection) -> None:
     conn.execute("BEGIN IMMEDIATE")
     try:
         conn.execute(
-            "INSERT INTO accounts(id, username, display_name, role, password_hash, parent_id) VALUES(?,?,?,?,?,NULL)",
-            (admin_id, settings.admin_username, "Main Admin", "ADMIN", hash_password(settings.admin_password)),
+            "INSERT INTO accounts(id, username, display_name, email, role, password_hash, parent_id) VALUES(?,?,?,?,?,?,NULL)",
+            (admin_id, settings.admin_username, "Main Admin", settings.admin_email_id, "ADMIN", hash_password(settings.admin_password)),
         )
         conn.execute(
             "INSERT INTO wallets(wallet_id, owner_id, owner_type, current_balance) VALUES(?,?,?,?)",
-            (wallet_id, admin_id, "ADMIN", money_str("100000.000")),
+            (wallet_id, admin_id, "ADMIN", money_str("0.000")),
         )
         conn.execute(
-            "INSERT INTO accounts(id, username, display_name, role, password_hash, parent_id) VALUES(?,?,?,?,?,NULL)",
-            (system_id, "system_pool", "System Game Pool", "SYSTEM", hash_password(uuid.uuid4().hex)),
+            "INSERT INTO accounts(id, username, display_name, email, role, password_hash, parent_id) VALUES(?,?,?,?,?,?,NULL)",
+            (system_id, "system_pool", "System Game Pool", "", "SYSTEM", hash_password(uuid.uuid4().hex)),
         )
         conn.execute(
             "INSERT INTO wallets(wallet_id, owner_id, owner_type, current_balance) VALUES(?,?,?,?)",

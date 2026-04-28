@@ -33,7 +33,12 @@ button.danger { background: #a73535; }
   box-shadow: 0 24px 80px rgba(0,0,0,.22);
 }
 .login-panel h1 { margin: 0 0 22px; font-size: 34px; }
+.login-panel .alert { margin-bottom: 14px; }
 .login-panel form, .grid-form { display: grid; gap: 12px; }
+.admin-money {
+  grid-template-columns: minmax(160px, 1fr) 160px auto;
+  align-items: center;
+}
 .topbar {
   min-height: 66px;
   display: flex;

@@ -1,26 +1,33 @@
 import asyncio
 import csv
+import hashlib
 import io
+import secrets
+import time
 from decimal import Decimal
 from urllib.parse import urlencode
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from core.database import connect, init_db
-from core.security import read_session
+from core.security import read_session, sign_session
 from models.schemas import Actor
 from realtime.manager import manager
 from services.auth_service import AuthService
 from services.game_orchestrator import GameOrchestrator
 from services.hierarchy_service import HierarchyService
 from services.wallet_service import WalletService
+from tasks.celery_app import send_email_job
+from utils.identity import generate_account_id, generate_password
 
 app = FastAPI(title="Luck Game")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+CAPTCHA_STORE: dict[str, tuple[int, float]] = {}
+OTP_STORE: dict[str, tuple[str, str, str, float]] = {}
 
 
 def back_to(path: str, *, error: str | None = None, notice: str | None = None) -> RedirectResponse:
@@ -31,6 +38,37 @@ def back_to(path: str, *, error: str | None = None, notice: str | None = None) -
         params["notice"] = notice
     target = path if not params else f"{path}?{urlencode(params)}"
     return RedirectResponse(target, status_code=303)
+
+
+def make_captcha() -> dict[str, str]:
+    left = secrets.randbelow(8) + 2
+    right = secrets.randbelow(8) + 2
+    token = secrets.token_urlsafe(24)
+    CAPTCHA_STORE[token] = (left + right, time.time() + 600)
+    return {"token": token, "question": f"{left} + {right}"}
+
+
+def verify_captcha(token: str, answer: str) -> bool:
+    expected = CAPTCHA_STORE.pop(token, None)
+    if not expected or expected[1] < time.time():
+        return False
+    try:
+        return int(answer.strip()) == expected[0]
+    except ValueError:
+        return False
+
+
+def otp_hash(code: str) -> str:
+    return hashlib.sha256(code.encode()).hexdigest()
+
+
+def queue_email(to_address: str | None, subject: str, body: str) -> None:
+    if not to_address:
+        return
+    try:
+        send_email_job.apply_async(args=[to_address, subject, body])
+    except Exception:
+        send_email_job(to_address, subject, body)
 
 
 @app.on_event("startup")
@@ -57,17 +95,55 @@ def current_actor(request: Request, conn=Depends(db)) -> Actor:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+def index(request: Request, error: str = "", notice: str = ""):
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "captcha": make_captcha(), "error": error, "notice": notice},
+    )
 
 
 @app.post("/login")
-def login(response: Response, role: str = Form(...), username: str = Form(...), password: str = Form(...), conn=Depends(db)):
+def login(
+    request: Request,
+    role: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    captcha_token: str = Form(...),
+    captcha_answer: str = Form(...),
+    conn=Depends(db),
+):
+    if not verify_captcha(captcha_token, captcha_answer):
+        return back_to("/", error="Captcha validation failed.")
+    actor = AuthService(conn).verify_credentials(username, password, role)
+    if not actor:
+        return back_to("/", error="Invalid login details.")
+    if role in {"ADMIN", "AGENT"}:
+        if not actor.email:
+            return back_to("/", error="This account does not have an email for OTP login.")
+        code = f"{secrets.randbelow(900000) + 100000}"
+        otp_token = secrets.token_urlsafe(32)
+        OTP_STORE[otp_token] = (actor.id, actor.role, otp_hash(code), time.time() + 600)
+        queue_email(actor.email, "Luck Game login OTP", f"Your Luck Game login OTP is {code}. It expires in 10 minutes.")
+        return templates.TemplateResponse(
+            "otp.html",
+            {"request": request, "otp_token": otp_token, "role": role, "username": username, "error": ""},
+        )
     token = AuthService(conn).login(username, password, role)
-    if not token:
-        return RedirectResponse("/?error=1", status_code=303)
     redirect = RedirectResponse("/dashboard", status_code=303)
     redirect.set_cookie("luck_session", token, httponly=True, samesite="lax")
+    return redirect
+
+
+@app.post("/login/otp")
+def login_otp(otp_token: str = Form(...), otp_code: str = Form(...), conn=Depends(db)):
+    pending = OTP_STORE.pop(otp_token, None)
+    if not pending or pending[3] < time.time() or not secrets.compare_digest(pending[2], otp_hash(otp_code.strip())):
+        return back_to("/", error="OTP validation failed.")
+    actor = AuthService(conn).get_actor(pending[0])
+    if not actor or actor.role != pending[1] or actor.status != "ACTIVE":
+        return back_to("/", error="Account is not active.")
+    redirect = RedirectResponse("/dashboard", status_code=303)
+    redirect.set_cookie("luck_session", sign_session(actor.id, actor.role), httponly=True, samesite="lax")
     return redirect
 
 
@@ -107,14 +183,36 @@ def dashboard(
 def create_child(
     username: str = Form(...),
     display_name: str = Form(...),
+    email: str = Form(""),
     role: str = Form(...),
     password: str = Form(...),
     actor: Actor = Depends(current_actor),
     conn=Depends(db),
 ):
     try:
-        HierarchyService(conn).create_child(actor, username, display_name, role, password)
+        HierarchyService(conn).create_child(actor, username, display_name, email, role, password)
         return back_to("/dashboard", notice="Account created successfully.")
+    except (PermissionError, ValueError) as exc:
+        return back_to("/dashboard", error=str(exc))
+
+
+@app.get("/credentials/generate")
+def generate_credentials(display_name: str, actor: Actor = Depends(current_actor)):
+    if actor.role == "USER":
+        raise HTTPException(status_code=403)
+    return JSONResponse({"username": generate_account_id(display_name), "password": generate_password()})
+
+
+@app.post("/wallet/admin/adjust")
+def adjust_admin_money(
+    direction: str = Form(...),
+    amount: Decimal = Form(...),
+    actor: Actor = Depends(current_actor),
+    conn=Depends(db),
+):
+    try:
+        WalletService(conn).adjust_admin_balance(actor, amount, direction)
+        return back_to("/dashboard", notice="Admin balance updated successfully.")
     except (PermissionError, ValueError) as exc:
         return back_to("/dashboard", error=str(exc))
 

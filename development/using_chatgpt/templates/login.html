@@ -10,6 +10,8 @@
   <main class="login-shell">
     <section class="login-panel">
       <h1>Luck Game</h1>
+      {% if error %}<section class="alert error">{{ error }}</section>{% endif %}
+      {% if notice %}<section class="alert notice">{{ notice }}</section>{% endif %}
       <form method="post" action="/login">
         <label>Role</label>
         <select name="role">
@@ -21,10 +23,12 @@
         <input name="username" autocomplete="username" required>
         <label>Password</label>
         <input name="password" type="password" autocomplete="current-password" required>
+        <label>Captcha: {{ captcha.question }}</label>
+        <input type="hidden" name="captcha_token" value="{{ captcha.token }}">
+        <input name="captcha_answer" inputmode="numeric" autocomplete="off" required>
         <button type="submit">Login</button>
       </form>
     </section>
   </main>
 </body>
 </html>
-

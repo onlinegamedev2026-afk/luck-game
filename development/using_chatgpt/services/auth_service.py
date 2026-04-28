@@ -10,6 +10,7 @@ def actor_from_row(row: sqlite3.Row) -> Actor:
         id=row["id"],
         username=row["username"],
         display_name=row["display_name"],
+        email=row["email"],
         role=row["role"],
         status=row["status"],
         parent_id=row["parent_id"],
@@ -23,6 +24,10 @@ class AuthService:
         self.conn = conn
 
     def login(self, username: str, password: str, expected_role: str) -> str | None:
+        actor = self.verify_credentials(username, password, expected_role)
+        return sign_session(actor.id, actor.role) if actor else None
+
+    def verify_credentials(self, username: str, password: str, expected_role: str) -> Actor | None:
         row = self.conn.execute(
             """
             SELECT a.*, w.wallet_id, w.current_balance
@@ -35,7 +40,7 @@ class AuthService:
             return None
         if not verify_password(password, row["password_hash"]):
             return None
-        return sign_session(row["id"], row["role"])
+        return actor_from_row(row)
 
     def get_actor(self, user_id: str) -> Actor | None:
         row = self.conn.execute(
@@ -47,4 +52,3 @@ class AuthService:
             (user_id,),
         ).fetchone()
         return actor_from_row(row) if row else None
-
