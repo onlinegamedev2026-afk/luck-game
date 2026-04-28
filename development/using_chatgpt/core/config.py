@@ -36,6 +36,10 @@ class Settings:
     smtp_password: str = os.getenv("SMTP_PASSWORD", "")
     smtp_from_email: str = os.getenv("SMTP_FROM_EMAIL", os.getenv("SMTP_USERNAME", ""))
     smtp_use_tls: bool = os.getenv("SMTP_USE_TLS", "true").lower() in {"1", "true", "yes", "on"}
+    smtp_delete_sent_copy: bool = os.getenv("SMTP_DELETE_SENT_COPY", "true").lower() in {"1", "true", "yes", "on"}
+    smtp_imap_host: str = os.getenv("SMTP_IMAP_HOST", "imap.gmail.com")
+    smtp_imap_port: int = int(os.getenv("SMTP_IMAP_PORT", "993"))
+    smtp_sent_mailbox: str = os.getenv("SMTP_SENT_MAILBOX", "[Gmail]/Sent Mail")
     betting_window_seconds: int = int(os.getenv("BETTING_WINDOW_SECONDS", "30"))
     card_drawing_delay_seconds: float = float(os.getenv("CARD_DRAWING_DELAY_SECONDS", "1.25"))
     min_bet: Decimal = Decimal("10.000")

@@ -1,6 +1,9 @@
 from celery import Celery
+import imaplib
 import smtplib
+import time
 from email.message import EmailMessage
+from email.utils import make_msgid
 
 from core.config import settings
 
@@ -21,6 +24,8 @@ def send_email_job(to_address: str, subject: str, body: str) -> dict:
     message["From"] = settings.smtp_from_email or settings.smtp_username
     message["To"] = to_address
     message["Subject"] = subject
+    message_id = make_msgid(domain=(settings.smtp_from_email or settings.smtp_username).split("@")[-1])
+    message["Message-ID"] = message_id
     message.set_content(body)
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
@@ -29,9 +34,39 @@ def send_email_job(to_address: str, subject: str, body: str) -> dict:
             if settings.smtp_username:
                 smtp.login(settings.smtp_username, settings.smtp_password)
             smtp.send_message(message)
-        return {"sent": True, "to": to_address, "subject": subject}
+        cleanup = _delete_sent_copy(message_id) if settings.smtp_delete_sent_copy else {"enabled": False}
+        return {"sent": True, "to": to_address, "subject": subject, "sent_copy_cleanup": cleanup}
     except Exception as exc:
         return {"sent": False, "error": str(exc), "to": to_address, "subject": subject}
+
+
+def _delete_sent_copy(message_id: str) -> dict:
+    if not settings.smtp_imap_host:
+        return {"enabled": True, "deleted": False, "error": "SMTP_IMAP_HOST is not configured."}
+    if not settings.smtp_username or not settings.smtp_password:
+        return {"enabled": True, "deleted": False, "error": "SMTP username/password are required for sent cleanup."}
+
+    try:
+        with imaplib.IMAP4_SSL(settings.smtp_imap_host, settings.smtp_imap_port) as imap:
+            imap.login(settings.smtp_username, settings.smtp_password)
+            status, _ = imap.select(f'"{settings.smtp_sent_mailbox}"')
+            if status != "OK":
+                return {"enabled": True, "deleted": False, "error": f"Could not open mailbox {settings.smtp_sent_mailbox}."}
+
+            encoded_id = message_id.encode("utf-8")
+            for _ in range(4):
+                status, data = imap.search(None, "HEADER", "Message-ID", encoded_id)
+                if status == "OK" and data and data[0]:
+                    ids = data[0].split()
+                    for mail_id in ids:
+                        imap.store(mail_id, "+FLAGS", "\\Deleted")
+                    imap.expunge()
+                    return {"enabled": True, "deleted": True, "message_count": len(ids)}
+                time.sleep(1)
+
+            return {"enabled": True, "deleted": False, "error": "Sent copy was not found by Message-ID."}
+    except Exception as exc:
+        return {"enabled": True, "deleted": False, "error": str(exc)}
 
 
 @celery_app.task
