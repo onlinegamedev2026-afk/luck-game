@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Andar Bahar — Live Sync</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root { --gold:#c9a84c; --gold-lt:#e8c96a; --gold-dim:rgba(201,168,76,.25); --cream:#f5ead8; --red-card:#c0392b; --card-w:68px; --card-h:96px; }
+body { min-height:100vh; background:radial-gradient(ellipse at 50% 20%, #1b6636 0%, #0c3a1d 55%, #071509 100%); font-family:'DM Mono', monospace; color:var(--cream); display:flex; flex-direction:column; align-items:center; padding:2.5rem 1rem 4rem; }
+body::before { content:''; position:fixed; inset:0; pointer-events:none; background-image:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px),repeating-linear-gradient(90deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px); z-index:0; }
+.wrap { position:relative; z-index:1; width:100%; max-width:880px; }
+header { text-align:center; margin-bottom:2rem; }
+header h1 { font-family:'Playfair Display', serif; font-size:clamp(2.2rem,7vw,3.6rem); font-weight:900; color:var(--gold); text-shadow:0 0 40px rgba(201,168,76,.35), 0 2px 0 rgba(0,0,0,.5); letter-spacing:2px; }
+header p { margin-top:6px; font-size:11px; letter-spacing:4px; text-transform:uppercase; color:rgba(245,234,216,.4); }
+.engine-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; background:rgba(0,0,0,.25); border:1px solid var(--gold-dim); border-radius:10px; padding:10px 16px; }
+.engine-name { font-size:11px; letter-spacing:3px; text-transform:uppercase; color:var(--gold); font-weight:500; }
+#conn-status { font-size:10px; letter-spacing:2px; text-transform:uppercase; padding:4px 10px; border-radius:20px; white-space:nowrap; border:1px solid transparent; transition:all .3s; }
+#conn-status.connected { background:rgba(46,204,113,.15); border-color:rgba(46,204,113,.4); color:#2ecc71; }
+#conn-status.disconnected { background:rgba(231,76,60,.15); border-color:rgba(231,76,60,.4); color:#e74c3c; }
+#banner { display:flex; align-items:center; justify-content:center; gap:10px; min-height:44px; padding:10px 20px; margin-bottom:1.5rem; background:rgba(0,0,0,.3); border:1px solid var(--gold-dim); border-radius:10px; text-align:center; font-size:13px; letter-spacing:1px; color:rgba(245,234,216,.7); }
+#banner strong { color:var(--gold-lt); font-weight:500; }
+.spinner { width:14px; height:14px; flex-shrink:0; border:2px solid rgba(201,168,76,.25); border-top-color:var(--gold); border-radius:50%; animation:spin .75s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.joker-panel { background:rgba(0,0,0,.28); border:1px solid var(--gold-dim); border-radius:16px; padding:1.2rem; margin-bottom:1rem; display:flex; align-items:center; justify-content:center; gap:18px; }
+.joker-title { font-size:10px; letter-spacing:3px; text-transform:uppercase; color:rgba(245,234,216,.45); }
+.groups { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:1.5rem; }
+.group-panel { background:rgba(0,0,0,.22); border:1px solid rgba(201,168,76,.15); border-radius:16px; padding:1.4rem 1.25rem; transition:border-color .4s, box-shadow .4s, opacity .5s; min-width:0; }
+.group-panel.highlight { border-color:var(--gold); box-shadow:0 0 20px rgba(201,168,76,.22); }
+.group-panel.winner { border-color:var(--gold-lt); box-shadow:0 0 40px rgba(201,168,76,.4); }
+.group-panel.loser { opacity:.38; }
+.g-tag { font-size:10px; letter-spacing:3px; text-transform:uppercase; color:rgba(245,234,216,.35); margin-bottom:3px; }
+.g-name { font-family:'Playfair Display', serif; font-size:2.2rem; font-weight:900; line-height:1; margin-bottom:1.1rem; }
+.g-name.a { color:#5dade2; } .g-name.b { color:#e8966a; }
+.cards-row { display:flex; gap:10px; min-height:var(--card-h); align-items:center; margin-bottom:1rem; flex-wrap:wrap; }
+.slot { width:var(--card-w); height:var(--card-h); border:1.5px dashed rgba(201,168,76,.15); border-radius:8px; background:rgba(0,0,0,.12); }
+.card { width:var(--card-w); height:var(--card-h); background:#fdf8f0; border-radius:8px; border:1px solid rgba(0,0,0,.12); box-shadow:3px 5px 14px rgba(0,0,0,.5); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; animation:deal .38s cubic-bezier(.34,1.56,.64,1) both; flex:0 0 auto; }
+@keyframes deal { from { transform:translateY(-50px) scale(.4) rotate(-12deg); opacity:0; } to { transform:none; opacity:1; } }
+.card .r { font-family:'Playfair Display', serif; font-size:19px; font-weight:700; line-height:1; }
+.card .s { font-size:17px; line-height:1; }
+.card.red .r,.card.red .s { color:var(--red-card); } .card.black .r,.card.black .s { color:#111; }
+.card.winning { outline:3px solid var(--gold-lt); box-shadow:0 0 30px rgba(232,201,106,.55); }
+.hand-label { font-size:10px; letter-spacing:2px; text-transform:uppercase; border-top:1px solid rgba(201,168,76,.12); padding-top:.7rem; color:rgba(245,234,216,.4); }
+.hand-label em { font-style:normal; color:var(--gold-lt); font-weight:500; }
+.btn-row { display:flex; gap:12px; justify-content:center; margin-bottom:1.5rem; }
+button { font-family:'DM Mono', monospace; font-size:11px; letter-spacing:2.5px; text-transform:uppercase; cursor:pointer; border-radius:9px; padding:11px 30px; border:1px solid var(--gold-dim); background:rgba(0,0,0,.3); color:var(--cream); transition:all .15s; }
+button:hover:not(:disabled) { background:rgba(201,168,76,.1); border-color:var(--gold); } button:active:not(:disabled) { transform:scale(.97); } button:disabled { opacity:.3; cursor:not-allowed; }
+#play-btn { background:linear-gradient(135deg,#c9a84c 0%,#9a7022 100%); border-color:transparent; color:#1a0e00; font-weight:500; min-width:120px; }
+#result { display:none; text-align:center; padding:1.6rem 1.25rem; border-radius:14px; border:1px solid var(--gold-dim); background:rgba(0,0,0,.32); margin-bottom:1.5rem; animation:fadeUp .5s ease both; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:none; } }
+#result .trophy { font-size:2.8rem; line-height:1; margin-bottom:6px; } #result .rtitle { font-family:'Playfair Display', serif; font-size:1.9rem; font-weight:900; color:var(--gold); margin-bottom:5px; } #result .rsub { font-size:12px; letter-spacing:1px; color:rgba(245,234,216,.55); } #result .rtime { font-size:10px; letter-spacing:2px; margin-top:8px; color:rgba(245,234,216,.3); }
+#history-box { background:rgba(0,0,0,.2); border:1px solid rgba(201,168,76,.1); border-radius:10px; padding:.9rem 1rem; }
+.history-title { font-size:10px; letter-spacing:3px; text-transform:uppercase; color:rgba(245,234,216,.35); margin-bottom:.75rem; }
+.history-track { display:flex; gap:7px; align-items:center; flex-wrap:nowrap; }
+.h-badge { flex:1; height:38px; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:'Playfair Display', serif; font-size:1rem; font-weight:900; border:1px solid transparent; transition:all .35s ease; position:relative; }
+.h-badge.empty { background:rgba(0,0,0,.18); border-color:rgba(201,168,76,.08); color:rgba(245,234,216,.12); }
+.h-badge.a { background:rgba(93,173,226,.15); border-color:rgba(93,173,226,.4); color:#5dade2; } .h-badge.b { background:rgba(232,150,106,.15); border-color:rgba(232,150,106,.4); color:#e8966a; }
+.h-badge.newest { transform:scale(1.12); box-shadow:0 0 18px rgba(201,168,76,.35); border-color:var(--gold)!important; }
+.h-badge .h-pos { font-family:'DM Mono', monospace; font-size:8px; font-weight:400; opacity:.4; letter-spacing:1px; margin-top:1px; }
+.history-legend { display:flex; gap:14px; margin-top:.6rem; justify-content:flex-end; } .history-legend span { font-size:10px; letter-spacing:1px; color:rgba(245,234,216,.3); } .history-legend span.a { color:rgba(93,173,226,.6); } .history-legend span.b { color:rgba(232,150,106,.6); }
+@media (max-width:700px){ .groups{grid-template-columns:1fr;} .joker-panel{flex-direction:column;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>Andar Bahar</h1><p>A / Andar vs B / Bahar &mdash; Live Sync</p></header>
+  <input id="server-url" type="hidden" value="{{ server_url }}" />
+  <div class="engine-row"><span class="engine-name">⚙ Andar Bahar Engine</span><span id="conn-status" class="disconnected">Offline</span></div>
+  <div id="banner">Connecting to server…</div>
+
+  <div class="joker-panel">
+    <div class="joker-title">Joker / Reference Card</div>
+    <div id="joker-card"><div class="slot"></div></div>
+  </div>
+
+  <div class="groups">
+    <div class="group-panel" id="panel-a"><div class="g-tag">Side</div><div class="g-name a">A / Andar</div><div class="cards-row" id="cards-a"><div class="slot"></div><div class="slot"></div><div class="slot"></div></div><div class="hand-label" id="hl-a">Cards &mdash; <em>—</em></div></div>
+    <div class="group-panel" id="panel-b"><div class="g-tag">Side</div><div class="g-name b">B / Bahar</div><div class="cards-row" id="cards-b"><div class="slot"></div><div class="slot"></div><div class="slot"></div></div><div class="hand-label" id="hl-b">Cards &mdash; <em>—</em></div></div>
+  </div>
+
+  <div class="btn-row"><button id="play-btn" onclick="startRound()" disabled>&#9654;&nbsp; Play</button><button id="reset-btn" onclick="hardReset()">Reset</button></div>
+  <div id="result"></div>
+  <div id="history-box"><div class="history-title">Last 10 Winners</div><div class="history-track" id="history-track"></div><div class="history-legend"><span class="a">■ A / Andar</span><span class="b">■ B / Bahar</span></div></div>
+</div>
+
+<script>
+'use strict';
+const SUIT_SYM={H:'♥',D:'♦',C:'♣',S:'♠'}; const SUIT_COL={H:'red',D:'red',C:'black',S:'black'}; const RANK_DISP={T:'10',J:'J',Q:'Q',K:'K',A:'A'};
+let socket=null, cardsA=[], cardsB=[], joker=null;
+function getServerUrl(){return document.getElementById('server-url').value.trim().replace(/\/+$/,'');}
+function setConnStatus(state,label){const el=document.getElementById('conn-status'); el.className=state; el.textContent=label;}
+function makeBanner(html,spin=false){document.getElementById('banner').innerHTML=(spin?'<div class="spinner"></div>':'')+html;}
+function lockButtons(){document.getElementById('play-btn').disabled=true; document.getElementById('reset-btn').disabled=true;}
+function unlockButtons(){document.getElementById('play-btn').disabled=!(socket&&socket.connected); document.getElementById('reset-btn').disabled=false;}
+function makeCard(card,isWinning=false){const rank=card.rank||card[0], suit=card.suit||card[1]; const d=document.createElement('div'); d.className=`card ${SUIT_COL[suit]}${isWinning?' winning':''}`; d.innerHTML=`<span class="r">${RANK_DISP[rank]||rank}</span><span class="s">${SUIT_SYM[suit]}</span>`; return d;}
+function renderJoker(card){const box=document.getElementById('joker-card'); box.innerHTML=''; if(card) box.appendChild(makeCard(card)); else {const s=document.createElement('div'); s.className='slot'; box.appendChild(s);} }
+function renderRow(rowId,drawn,winningCard=null){const row=document.getElementById(rowId); row.innerHTML=''; if(!drawn.length){for(let i=0;i<3;i++){const s=document.createElement('div'); s.className='slot'; row.appendChild(s);} return;} for(const c of drawn){const isWin=winningCard && c.rank===winningCard.rank && c.suit===winningCard.suit; row.appendChild(makeCard(c,isWin));}}
+function setHandLabel(id,cards){document.getElementById(id).innerHTML=cards.length?`Cards &mdash; <em>${cards.length} dealt</em>`:'Cards &mdash; <em>—</em>';}
+function setPanelState(id,state){const el=document.getElementById(id); el.classList.remove('highlight','winner','loser'); if(state) el.classList.add(state);}
+function clearBoard(){['panel-a','panel-b'].forEach(id=>setPanelState(id,'')); cardsA=[]; cardsB=[]; joker=null; renderJoker(null); renderRow('cards-a',[]); renderRow('cards-b',[]); setHandLabel('hl-a',[]); setHandLabel('hl-b',[]); const r=document.getElementById('result'); r.style.display='none'; r.innerHTML='';}
+function replayCardsInstantly(cards_dealt){cardsA=[]; cardsB=[]; for(const c of (cards_dealt||[])){if(c.group==='A') cardsA.push(c); else cardsB.push(c);} renderRow('cards-a',cardsA); renderRow('cards-b',cardsB); setHandLabel('hl-a',cardsA); setHandLabel('hl-b',cardsB);}
+function showResult(winner,time,winningCard){const resultEl=document.getElementById('result'); resultEl.style.display='block'; const name=winner==='A'?'A / Andar':'B / Bahar'; resultEl.innerHTML=`<div class="trophy">🏆</div><div class="rtitle">${name} Wins!</div><div class="rsub">First matching rank found by server</div>${time?`<div class="rtime">${time}</div>`:''}`; setPanelState(winner==='A'?'panel-a':'panel-b','winner'); setPanelState(winner==='A'?'panel-b':'panel-a','loser'); renderRow('cards-a',cardsA,winningCard); renderRow('cards-b',cardsB,winningCard); makeBanner(`<strong>${name} wins!</strong> &mdash; press Play for another round`);}
+function renderHistory(last10){const track=document.getElementById('history-track'); track.innerHTML=''; for(let i=0;i<10;i++){const badge=document.createElement('div'); const w=last10&&last10[i]?last10[i]:null; if(!w){badge.className='h-badge empty'; badge.textContent='—';} else {badge.className=`h-badge ${w.toLowerCase()}${i===last10.length-1?' newest':''}`; badge.textContent=w;} const pos=document.createElement('div'); pos.className='h-pos'; pos.textContent=`#${i+1}`; badge.appendChild(pos); track.appendChild(badge);}}
+function initSocket(){const url=getServerUrl(); socket=io(url,{transports:['websocket','polling']});
+  socket.on('connect',()=>setConnStatus('connected','● Live'));
+  socket.on('disconnect',()=>{setConnStatus('disconnected','✕ Offline'); makeBanner('Lost connection. Refresh to retry.'); document.getElementById('play-btn').disabled=true;});
+  socket.on('server_state',(data)=>{renderHistory(data.last_10_winners||[]); if(data.joker){joker=data.joker; renderJoker(joker);} replayCardsInstantly(data.cards_dealt||[]); if(!data.in_progress){makeBanner('Connected — press <strong>Play</strong> to start'); document.getElementById('play-btn').disabled=false; if(data.winner) showResult(data.winner,data.time||'',data.winning_card||null); return;} lockButtons(); makeBanner(`<strong>${(data.cards_dealt||[]).length} of ${data.total_draws||'?'} </strong> cards dealt — catching up…`,true);});
+  socket.on('game_started',()=>{lockButtons(); clearBoard(); makeBanner('Game started — opening joker…',true);});
+  socket.on('joker_opened',(data)=>{joker=data; renderJoker(joker); makeBanner('Joker opened — dealing to <strong>Andar / Bahar</strong>…',true);});
+  socket.on('card_dealt',(data)=>{if(data.group==='A'){cardsA.push(data); renderRow('cards-a',cardsA); setHandLabel('hl-a',cardsA); setPanelState('panel-a','highlight'); setPanelState('panel-b','');} else {cardsB.push(data); renderRow('cards-b',cardsB); setHandLabel('hl-b',cardsB); setPanelState('panel-b','highlight'); setPanelState('panel-a','');} makeBanner(`Draw <strong>${data.draw_num} of ${data.total_draws}</strong> &mdash; Side <strong>${data.group}</strong> receives a card`);});
+  socket.on('game_result',(data)=>{renderHistory(data.last_10_winners||[]); setPanelState('panel-a',''); setPanelState('panel-b',''); showResult(data.winner,data.time||'',data.winning_card||null); unlockButtons();});
+  socket.on('play_rejected',(data)=>{makeBanner('⚠ '+(data.reason||'Game in progress on another device.')); unlockButtons();});
+  socket.on('game_error',(data)=>{makeBanner('Server error: '+(data.message||'unknown')); unlockButtons();});
+}
+function startRound(){if(!socket||!socket.connected)return; socket.emit('request_play',{group_a_bid:Math.floor(Math.random()*290)+10,group_b_bid:Math.floor(Math.random()*290)+10});}
+function hardReset(){clearBoard(); makeBanner('Board cleared — press <strong>Play</strong> to start');}
+renderHistory([]); initSocket();
+</script>
+</body>
+</html>

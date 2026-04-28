@@ -62,13 +62,14 @@ def otp_hash(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 
-def queue_email(to_address: str | None, subject: str, body: str) -> None:
+def queue_email(to_address: str | None, subject: str, body: str) -> dict:
     if not to_address:
-        return
+        return {"sent": False, "error": "Missing recipient email address."}
     try:
         send_email_job.apply_async(args=[to_address, subject, body])
+        return {"sent": True, "queued": True, "to": to_address}
     except Exception:
-        send_email_job(to_address, subject, body)
+        return send_email_job(to_address, subject, body)
 
 
 @app.on_event("startup")
@@ -123,10 +124,18 @@ def login(
         code = f"{secrets.randbelow(900000) + 100000}"
         otp_token = secrets.token_urlsafe(32)
         OTP_STORE[otp_token] = (actor.id, actor.role, otp_hash(code), time.time() + 600)
-        queue_email(actor.email, "Luck Game login OTP", f"Your Luck Game login OTP is {code}. It expires in 10 minutes.")
+        delivery = queue_email(actor.email, "Luck Game login OTP", f"Your Luck Game login OTP is {code}. It expires in 10 minutes.")
         return templates.TemplateResponse(
             "otp.html",
-            {"request": request, "otp_token": otp_token, "role": role, "username": username, "error": ""},
+            {
+                "request": request,
+                "otp_token": otp_token,
+                "role": role,
+                "username": username,
+                "error": "",
+                "delivery": delivery,
+                "dev_otp": code if not settings.smtp_host else "",
+            },
         )
     token = AuthService(conn).login(username, password, role)
     redirect = RedirectResponse("/dashboard", status_code=303)
@@ -278,56 +287,120 @@ def download_children(actor: Actor = Depends(current_actor), conn=Depends(db)):
 
 
 @app.get("/game", response_class=HTMLResponse)
-def game(request: Request, error: str = "", notice: str = "", actor: Actor = Depends(current_actor)):
+@app.get("/games", response_class=HTMLResponse)
+def games(request: Request, error: str = "", notice: str = "", actor: Actor = Depends(current_actor), conn=Depends(db)):
+    active = GameOrchestrator(conn).active_game_for_player(actor)
     return templates.TemplateResponse(
-        "game.html",
-        {"request": request, "actor": actor, "error": error, "notice": notice},
+        "games.html",
+        {
+            "request": request,
+            "actor": actor,
+            "games": GameOrchestrator.available_games(),
+            "active_game": active,
+            "error": error,
+            "notice": notice,
+        },
     )
 
 
-@app.post("/game/betting/open")
-async def open_betting(actor: Actor = Depends(current_actor), conn=Depends(db)):
+@app.get("/games/{game_key}", response_class=HTMLResponse)
+def game_console(
+    game_key: str,
+    request: Request,
+    error: str = "",
+    notice: str = "",
+    actor: Actor = Depends(current_actor),
+    conn=Depends(db),
+):
     try:
-        await GameOrchestrator(conn).open_betting()
-        return back_to("/game", notice="Betting opened successfully.")
+        orchestrator = GameOrchestrator(conn, game_key)
+    except ValueError:
+        raise HTTPException(status_code=404)
+    active = orchestrator.active_game_for_player(actor)
+    if active and active["game_key"] != game_key:
+        return back_to("/games", error=f"You already have an active {active['title']} round.")
+    template = "andar_bahar.html" if game_key == "andar-bahar" else "tin_patti.html"
+    return templates.TemplateResponse(
+        template,
+        {
+            "request": request,
+            "actor": actor,
+            "game": {"key": game_key, "title": orchestrator.definition["title"]},
+            "error": error,
+            "notice": notice,
+        },
+    )
+
+
+@app.get("/api/me")
+def api_me(actor: Actor = Depends(current_actor), conn=Depends(db)):
+    refreshed = AuthService(conn).get_actor(actor.id)
+    if not refreshed:
+        raise HTTPException(status_code=401)
+    active = GameOrchestrator(conn).active_game_for_player(refreshed)
+    return JSONResponse(
+        {
+            "id": refreshed.username,
+            "display_name": refreshed.display_name,
+            "role": refreshed.role,
+            "balance": f"{refreshed.balance:.3f}",
+            "active_game": active,
+        }
+    )
+
+
+@app.post("/games/{game_key}/betting/open")
+async def open_betting(game_key: str, actor: Actor = Depends(current_actor), conn=Depends(db)):
+    try:
+        await GameOrchestrator(conn, game_key).open_betting()
+        return back_to(f"/games/{game_key}", notice="Betting opened successfully.")
     except ValueError as exc:
-        return back_to("/game", error=str(exc))
+        return back_to(f"/games/{game_key}", error=str(exc))
 
 
-@app.post("/game/bet")
-async def bet(side: str = Form(...), amount: Decimal = Form(...), actor: Actor = Depends(current_actor), conn=Depends(db)):
+@app.post("/games/{game_key}/bet")
+async def bet(game_key: str, side: str = Form(...), amount: Decimal = Form(...), actor: Actor = Depends(current_actor), conn=Depends(db)):
     try:
-        await GameOrchestrator(conn).place_bet(actor, side, amount)
-        return back_to("/game", notice="Bet placed successfully.")
+        await GameOrchestrator(conn, game_key).place_bet(actor, side, amount)
+        return back_to(f"/games/{game_key}", notice="Bet placed successfully.")
     except (PermissionError, ValueError) as exc:
-        return back_to("/game", error=str(exc))
+        return back_to(f"/games/{game_key}", error=str(exc))
 
 
-@app.post("/game/start")
-async def start_game(actor: Actor = Depends(current_actor), conn=Depends(db)):
-    if GameOrchestrator(conn).current_state()["in_progress"]:
-        return back_to("/game", error="A Tin Patti round is already running.")
+@app.post("/games/{game_key}/start")
+async def start_game(game_key: str, actor: Actor = Depends(current_actor), conn=Depends(db)):
+    try:
+        orchestrator = GameOrchestrator(conn, game_key)
+    except ValueError:
+        raise HTTPException(status_code=404)
+    if orchestrator.current_state()["in_progress"]:
+        return back_to(f"/games/{game_key}", error=f"A {orchestrator.definition['title']} round is already running.")
 
     async def run_with_own_connection():
         own_conn = connect()
         try:
-            await GameOrchestrator(own_conn).run_round()
+            await GameOrchestrator(own_conn, game_key).run_round()
         finally:
             own_conn.close()
 
     asyncio.create_task(run_with_own_connection())
-    return back_to("/game", notice="Round started.")
+    return back_to(f"/games/{game_key}", notice="Round started.")
 
 
-@app.websocket("/ws/game")
-async def game_ws(websocket: WebSocket):
+@app.websocket("/ws/games/{game_key}")
+async def game_ws(game_key: str, websocket: WebSocket):
     await manager.connect(websocket)
     conn = connect()
     try:
-        await websocket.send_json({"event": "server_state", "data": GameOrchestrator(conn).current_state()})
+        await websocket.send_json({"event": "server_state", "data": GameOrchestrator(conn, game_key).current_state()})
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     finally:
         conn.close()
+
+
+@app.websocket("/ws/game")
+async def legacy_game_ws(websocket: WebSocket):
+    await game_ws("tin-patti", websocket)

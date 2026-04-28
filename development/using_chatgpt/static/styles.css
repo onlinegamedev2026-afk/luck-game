@@ -13,13 +13,29 @@ button, input, select {
   border-radius: 6px;
   padding: 9px 11px;
 }
-button {
+button, .button-link {
   background: #24563a;
   color: white;
   border: 0;
   cursor: pointer;
 }
+button.secondary {
+  background: #edf3ea;
+  color: #24563a;
+  border: 1px solid #becabb;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
 button.danger { background: #a73535; }
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 9px 13px;
+}
 .login-page {
   display: grid;
   place-items: center;
@@ -35,6 +51,19 @@ button.danger { background: #a73535; }
 .login-panel h1 { margin: 0 0 22px; font-size: 34px; }
 .login-panel .alert { margin-bottom: 14px; }
 .login-panel form, .grid-form { display: grid; gap: 12px; }
+.captcha-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.captcha-row label {
+  margin: 0;
+}
+.otp-hint {
+  margin: -2px 0 0;
+}
 .admin-money {
   grid-template-columns: minmax(160px, 1fr) 160px auto;
   align-items: center;
@@ -109,6 +138,28 @@ button.danger { background: #a73535; }
   border-radius: 6px;
   background: #f7faf5;
 }
+.game-list {
+  display: grid;
+  gap: 12px;
+}
+.game-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #edf1eb;
+  border-radius: 8px;
+  background: #f8fbf6;
+}
+.game-card div {
+  display: grid;
+  gap: 5px;
+}
+.game-card span {
+  color: #697566;
+  font-size: 13px;
+}
 .game-page {
   background: radial-gradient(circle at top, #22623b, #07130c 72%);
   color: #f6f0df;
@@ -147,6 +198,28 @@ button.danger { background: #a73535; }
 .group-panel.winner { border-color: #e7c75f; box-shadow: 0 0 32px rgba(231,199,95,.28); }
 .group-panel.loser { opacity: .48; }
 .cards-row { display: flex; gap: 12px; align-items: center; min-height: 112px; }
+.andar-bahar-page .cards-row {
+  flex-wrap: wrap;
+}
+.joker-panel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 22px;
+  min-height: 140px;
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 8px;
+  background: rgba(0,0,0,.2);
+}
+.joker-panel div:first-child {
+  display: grid;
+  gap: 5px;
+}
+.joker-panel span {
+  color: rgba(246,240,223,.62);
+  font-size: 13px;
+}
 .card, .slot {
   width: 74px;
   height: 104px;
@@ -163,10 +236,16 @@ button.danger { background: #a73535; }
   box-shadow: 0 10px 24px rgba(0,0,0,.35);
 }
 .card.red { color: #c73535; }
+.card.winning-card {
+  outline: 3px solid #e7c75f;
+  box-shadow: 0 0 26px rgba(231,199,95,.45), 0 10px 24px rgba(0,0,0,.35);
+}
 .history-track { display: grid; grid-template-columns: repeat(10, minmax(32px, 1fr)); gap: 7px; }
 .h-badge { text-align: center; padding: 10px 0; border-radius: 6px; background: rgba(255,255,255,.12); }
 @media (max-width: 760px) {
   .row { grid-template-columns: 1fr; }
   .groups { grid-template-columns: 1fr; }
+  .game-card { grid-template-columns: 1fr; }
+  .joker-panel { justify-content: flex-start; }
   .topbar { align-items: flex-start; }
 }

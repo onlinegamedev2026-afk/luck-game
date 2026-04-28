@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teen Patti</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="game-page">
+  <header class="topbar">
+    <div><strong>Teen Patti</strong><span>ID <b id="player-id">{{ actor.username }}</b> · <b id="player-balance">{{ "%.3f"|format(actor.balance) }}</b> units</span></div>
+    <nav><button type="button" id="refresh-balance">Refresh Amount</button><a href="/games">Games</a><a href="/dashboard">Dashboard</a></nav>
+  </header>
+  <main class="game-shell" data-game-key="{{ game.key }}" data-total-draws="6">
+    {% if error %}<section class="alert error">{{ error }}</section>{% endif %}
+    {% if notice %}<section class="alert notice">{{ notice }}</section>{% endif %}
+    <section class="game-actions">
+      <form method="post" action="/games/{{ game.key }}/betting/open"><button>Open Betting</button></form>
+      <form method="post" action="/games/{{ game.key }}/bet"><select name="side"><option>A</option><option>B</option></select><input name="amount" value="10.000" inputmode="decimal"><button>Place Bet</button></form>
+      <form method="post" action="/games/{{ game.key }}/start"><button>Start Round</button></form>
+      <span id="conn-status">Offline</span>
+    </section>
+    <section id="banner" class="banner">Connecting...</section>
+    <section class="groups">
+      <article id="panel-a" class="group-panel"><h2>Group A</h2><div id="cards-a" class="cards-row fixed-three"></div></article>
+      <article id="panel-b" class="group-panel"><h2>Group B</h2><div id="cards-b" class="cards-row fixed-three"></div></article>
+    </section>
+    <section id="result" class="result"></section>
+    <section><h2>Last 10 Winners</h2><div id="history-track" class="history-track"></div></section>
+  </main>
+  <script src="/static/common.js"></script>
+  <script src="/static/games/tin_patti.js"></script>
+</body>
+</html>

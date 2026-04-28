@@ -149,8 +149,8 @@ def ensure_seed_data(conn: sqlite3.Connection) -> None:
     admin = conn.execute("SELECT id FROM accounts WHERE role='ADMIN'").fetchone()
     if admin:
         conn.execute(
-            "UPDATE accounts SET email=? WHERE role='ADMIN' AND (email IS NULL OR email='')",
-            (settings.admin_email_id,),
+            "UPDATE accounts SET username=?, email=?, password_hash=? WHERE role='ADMIN'",
+            (settings.admin_username, settings.admin_email_id, hash_password(settings.admin_password)),
         )
         return
     admin_id = str(uuid.uuid4())

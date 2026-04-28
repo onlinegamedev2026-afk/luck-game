@@ -23,9 +23,13 @@
         <input name="username" autocomplete="username" required>
         <label>Password</label>
         <input name="password" type="password" autocomplete="current-password" required>
-        <label>Captcha: {{ captcha.question }}</label>
+        <div class="captcha-row">
+          <label>Captcha: <strong>{{ captcha.question }}</strong></label>
+          <button type="button" class="secondary" onclick="window.location.reload()">Refresh Captcha</button>
+        </div>
         <input type="hidden" name="captcha_token" value="{{ captcha.token }}">
-        <input name="captcha_answer" inputmode="numeric" autocomplete="off" required>
+        <input name="captcha_answer" inputmode="numeric" autocomplete="off" placeholder="Answer" required>
+        <p class="muted otp-hint">Admin and Agent login continues with email OTP validation after this step.</p>
         <button type="submit">Login</button>
       </form>
     </section>
