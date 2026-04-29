@@ -28,6 +28,11 @@ button:disabled {
   cursor: not-allowed;
   opacity: .45;
 }
+input[readonly] {
+  background: #f7faf5;
+  color: #425044;
+  cursor: default;
+}
 button.danger { background: #a73535; }
 .button-link {
   display: inline-flex;
@@ -63,6 +68,16 @@ button.danger { background: #a73535; }
 }
 .otp-hint {
   margin: -2px 0 0;
+}
+.otp-tools {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 180px) auto minmax(140px, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+.otp-tools .ok {
+  color: #205233;
+  font-weight: 700;
 }
 .admin-money {
   grid-template-columns: minmax(160px, 1fr) 160px auto;
@@ -244,6 +259,7 @@ button.danger { background: #a73535; }
 .h-badge { text-align: center; padding: 10px 0; border-radius: 6px; background: rgba(255,255,255,.12); }
 @media (max-width: 760px) {
   .row { grid-template-columns: 1fr; }
+  .otp-tools { grid-template-columns: 1fr; }
   .groups { grid-template-columns: 1fr; }
   .game-card { grid-template-columns: 1fr; }
   .joker-panel { justify-content: flex-start; }

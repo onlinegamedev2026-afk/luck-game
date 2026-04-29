@@ -12,13 +12,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from core.config import settings
 from core.database import connect, init_db
 from core.security import read_session, sign_session
 from models.schemas import Actor
 from realtime.manager import manager
 from services.auth_service import AuthService
 from services.game_orchestrator import GameOrchestrator
-from services.hierarchy_service import HierarchyService
+from services.hierarchy_service import HierarchyService, is_valid_email
 from services.wallet_service import WalletService
 from tasks.celery_app import send_email_job
 from utils.identity import generate_account_id, generate_password
@@ -28,6 +29,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 CAPTCHA_STORE: dict[str, tuple[int, float]] = {}
 OTP_STORE: dict[str, tuple[str, str, str, float]] = {}
+CHILD_EMAIL_OTP_STORE: dict[str, dict[str, str | float | bool]] = {}
 
 
 def back_to(path: str, *, error: str | None = None, notice: str | None = None) -> RedirectResponse:
@@ -195,20 +197,105 @@ def create_child(
     email: str = Form(""),
     role: str = Form(...),
     password: str = Form(...),
+    email_otp_token: str = Form(""),
     actor: Actor = Depends(current_actor),
     conn=Depends(db),
 ):
     try:
+        if role == "AGENT":
+            _require_verified_child_email(actor, email, email_otp_token)
         HierarchyService(conn).create_child(actor, username, display_name, email, role, password)
+        if email_otp_token:
+            CHILD_EMAIL_OTP_STORE.pop(email_otp_token, None)
         return back_to("/dashboard", notice="Account created successfully.")
     except (PermissionError, ValueError) as exc:
         return back_to("/dashboard", error=str(exc))
 
 
+def _require_verified_child_email(actor: Actor, email: str, token: str) -> None:
+    pending = CHILD_EMAIL_OTP_STORE.get(token)
+    if (
+        not pending
+        or pending["expires_at"] < time.time()
+        or pending["creator_id"] != actor.id
+        or pending["email"] != email.strip()
+        or not pending["verified"]
+    ):
+        raise ValueError("Verify the agent email with OTP before generating credentials.")
+
+
+@app.post("/children/email-otp/send")
+def send_child_email_otp(email: str = Form(...), role: str = Form("AGENT"), actor: Actor = Depends(current_actor)):
+    email = email.strip()
+    if not HierarchyService.can_create(actor, role):
+        raise HTTPException(status_code=403)
+    if role != "AGENT":
+        return JSONResponse({"required": False, "verified": True})
+    if not is_valid_email(email):
+        raise HTTPException(status_code=400, detail="Enter a valid agent email first.")
+    code = f"{secrets.randbelow(900000) + 100000}"
+    token = secrets.token_urlsafe(32)
+    CHILD_EMAIL_OTP_STORE[token] = {
+        "creator_id": actor.id,
+        "email": email,
+        "code_hash": otp_hash(code),
+        "expires_at": time.time() + 600,
+        "verified": False,
+    }
+    delivery = queue_email(
+        email,
+        "Luck Game agent email verification OTP",
+        f"Your Luck Game agent email verification OTP is {code}. It expires in 10 minutes.",
+    )
+    return JSONResponse(
+        {
+            "required": True,
+            "token": token,
+            "delivery": delivery,
+            "dev_otp": code if not settings.smtp_host else "",
+        }
+    )
+
+
+@app.post("/children/email-otp/verify")
+def verify_child_email_otp(
+    email: str = Form(...),
+    otp_token: str = Form(...),
+    otp_code: str = Form(...),
+    actor: Actor = Depends(current_actor),
+):
+    pending = CHILD_EMAIL_OTP_STORE.get(otp_token)
+    if (
+        not pending
+        or pending["expires_at"] < time.time()
+        or pending["creator_id"] != actor.id
+        or pending["email"] != email.strip()
+        or not secrets.compare_digest(str(pending["code_hash"]), otp_hash(otp_code.strip()))
+    ):
+        raise HTTPException(status_code=400, detail="OTP validation failed.")
+    pending["verified"] = True
+    return JSONResponse({"verified": True})
+
+
 @app.get("/credentials/generate")
-def generate_credentials(display_name: str, actor: Actor = Depends(current_actor)):
+def generate_credentials(
+    display_name: str,
+    role: str = "AGENT",
+    email: str = "",
+    email_otp_token: str = "",
+    actor: Actor = Depends(current_actor),
+):
     if actor.role == "USER":
         raise HTTPException(status_code=403)
+    if not HierarchyService.can_create(actor, role):
+        raise HTTPException(status_code=403)
+    if role == "AGENT":
+        if not is_valid_email(email):
+            raise HTTPException(status_code=400, detail="Enter a valid agent email first.")
+        try:
+            _require_verified_child_email(actor, email, email_otp_token)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     return JSONResponse({"username": generate_account_id(display_name), "password": generate_password()})
 
 
@@ -235,6 +322,16 @@ def set_status(child_id: str, status: str = Form(...), actor: Actor = Depends(cu
         return back_to("/dashboard", error=str(exc))
 
 
+@app.post("/children/status")
+def set_status_from_form(
+    child_id: str = Form(...),
+    status: str = Form(...),
+    actor: Actor = Depends(current_actor),
+    conn=Depends(db),
+):
+    return set_status(child_id, status, actor, conn)
+
+
 @app.post("/children/{child_id}/delete")
 def delete_child(child_id: str, actor: Actor = Depends(current_actor), conn=Depends(db)):
     try:
@@ -242,6 +339,11 @@ def delete_child(child_id: str, actor: Actor = Depends(current_actor), conn=Depe
         return back_to("/dashboard", notice="Account subtree removed successfully.")
     except (PermissionError, ValueError) as exc:
         return back_to("/dashboard", error=str(exc))
+
+
+@app.post("/children/delete")
+def delete_child_from_form(child_id: str = Form(...), actor: Actor = Depends(current_actor), conn=Depends(db)):
+    return delete_child(child_id, actor, conn)
 
 
 @app.post("/wallet/{child_id}/add")
@@ -253,6 +355,16 @@ def add_money(child_id: str, amount: Decimal = Form(...), actor: Actor = Depends
         return back_to("/dashboard", error=str(exc))
 
 
+@app.post("/wallet/add")
+def add_money_from_form(
+    child_id: str = Form(...),
+    amount: Decimal = Form(...),
+    actor: Actor = Depends(current_actor),
+    conn=Depends(db),
+):
+    return add_money(child_id, amount, actor, conn)
+
+
 @app.post("/wallet/{child_id}/deduct")
 def deduct_money(child_id: str, amount: Decimal = Form(...), actor: Actor = Depends(current_actor), conn=Depends(db)):
     try:
@@ -260,6 +372,16 @@ def deduct_money(child_id: str, amount: Decimal = Form(...), actor: Actor = Depe
         return back_to("/dashboard", notice="Money deducted successfully.")
     except (PermissionError, ValueError) as exc:
         return back_to("/dashboard", error=str(exc))
+
+
+@app.post("/wallet/deduct")
+def deduct_money_from_form(
+    child_id: str = Form(...),
+    amount: Decimal = Form(...),
+    actor: Actor = Depends(current_actor),
+    conn=Depends(db),
+):
+    return deduct_money(child_id, amount, actor, conn)
 
 
 @app.get("/download/transactions")

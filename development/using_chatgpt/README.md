@@ -46,7 +46,7 @@ docker compose up --build
 Use this database URL format in `.env`:
 
 ```text
-DATABASE_URL=postgresql://luck_user:luck_password@host.docker.internal:5432/luck_game
+DATABASE_URL=postgresql://luck_user:luck_user_dev$2026@host.docker.internal:5432/luck_game
 ```
 
 Then open `http://127.0.0.1:8000`.

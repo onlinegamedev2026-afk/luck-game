@@ -40,15 +40,22 @@
       <h2>Create Child</h2>
       <form class="grid-form" method="post" action="/children" id="create-child-form">
         <input name="display_name" id="display-name-input" placeholder="Display name" required>
-        <input name="username" id="username-input" placeholder="User ID" required>
-        <input name="email" type="email" placeholder="Email">
-        <select name="role">
+        <input name="username" id="username-input" placeholder="User ID" readonly required>
+        <input name="email" id="email-input" type="email" placeholder="Email">
+        <input name="email_otp_token" id="email-otp-token" type="hidden">
+        <div class="otp-tools" id="agent-email-otp">
+          <button type="button" id="send-email-otp" disabled>Send Email OTP</button>
+          <input id="email-otp-input" inputmode="numeric" maxlength="6" placeholder="Email OTP" disabled>
+          <button type="button" id="verify-email-otp" disabled>Verify OTP</button>
+          <span id="email-otp-status" class="muted"></span>
+        </div>
+        <select name="role" id="role-input">
           {% if actor.role == "ADMIN" %}<option value="AGENT">Agent</option>{% endif %}
           {% if actor.role == "AGENT" %}<option value="AGENT">Agent</option><option value="USER">User</option>{% endif %}
         </select>
-        <input name="password" id="password-input" placeholder="Password" required>
-        <button type="button" id="generate-credentials">Generate ID and Password</button>
-        <button>Create</button>
+        <input name="password" id="password-input" placeholder="Password" readonly required>
+        <button type="button" id="generate-credentials" disabled>Generate ID and Password</button>
+        <button id="create-child-button" disabled>Create</button>
       </form>
     </section>
     <section class="panel">
@@ -63,13 +70,14 @@
             <strong>{{ child.display_name }}</strong>
             <span>{{ child.role }} · {{ child.username }} · {{ child.id[:8] }} · {{ "%.3f"|format(child.balance) }}</span>
           </div>
-          <form method="post" action="/wallet/{{ child.id }}/add"><input name="amount" value="10.000"><button>+ Money</button></form>
-          <form method="post" action="/wallet/{{ child.id }}/deduct"><input name="amount" value="10.000"><button>- Money</button></form>
-          <form method="post" action="/children/{{ child.id }}/status">
+          <form method="post" action="/wallet/add"><input type="hidden" name="child_id" value="{{ child.id }}"><input name="amount" value="10.000"><button>+ Money</button></form>
+          <form method="post" action="/wallet/deduct"><input type="hidden" name="child_id" value="{{ child.id }}"><input name="amount" value="10.000"><button>- Money</button></form>
+          <form method="post" action="/children/status">
+            <input type="hidden" name="child_id" value="{{ child.id }}">
             <input type="hidden" name="status" value="{{ 'INACTIVE' if child.status == 'ACTIVE' else 'ACTIVE' }}">
             <button>{{ 'Deactivate' if child.status == 'ACTIVE' else 'Activate' }}</button>
           </form>
-          <form method="post" action="/children/{{ child.id }}/delete"><button class="danger">Remove</button></form>
+          <form method="post" action="/children/delete"><input type="hidden" name="child_id" value="{{ child.id }}"><button class="danger">Remove</button></form>
         </article>
         {% else %}
         <p class="muted">No immediate children yet.</p>
@@ -91,18 +99,133 @@
   <script>
     const generateButton = document.querySelector("#generate-credentials");
     if (generateButton) {
-      generateButton.addEventListener("click", async () => {
-        const nameInput = document.querySelector("#display-name-input");
-        const name = nameInput.value.trim();
-        if (!name) {
-          nameInput.focus();
+      const form = document.querySelector("#create-child-form");
+      const nameInput = document.querySelector("#display-name-input");
+      const emailInput = document.querySelector("#email-input");
+      const roleInput = document.querySelector("#role-input");
+      const usernameInput = document.querySelector("#username-input");
+      const passwordInput = document.querySelector("#password-input");
+      const createButton = document.querySelector("#create-child-button");
+      const otpPanel = document.querySelector("#agent-email-otp");
+      const sendOtpButton = document.querySelector("#send-email-otp");
+      const otpInput = document.querySelector("#email-otp-input");
+      const verifyOtpButton = document.querySelector("#verify-email-otp");
+      const otpTokenInput = document.querySelector("#email-otp-token");
+      const otpStatus = document.querySelector("#email-otp-status");
+      let emailVerified = false;
+      const needsEmail = () => roleInput.value === "AGENT";
+      const hasValidEmail = () => emailInput.validity.valid && emailInput.value.trim().length > 0;
+      const canGenerate = () => {
+        const hasName = nameInput.value.trim().length > 0;
+        const emailReady = !needsEmail() || hasValidEmail() && emailVerified;
+        return hasName && emailReady;
+      };
+      const updateCreateControls = () => {
+        otpPanel.hidden = !needsEmail();
+        sendOtpButton.disabled = !needsEmail() || !hasValidEmail();
+        otpInput.disabled = !needsEmail() || !otpTokenInput.value || emailVerified;
+        verifyOtpButton.disabled = otpInput.disabled || otpInput.value.trim().length !== 6;
+        generateButton.disabled = !canGenerate();
+        createButton.disabled = !(usernameInput.value.trim() && passwordInput.value.trim());
+      };
+      const setOtpStatus = (message, ok = false) => {
+        otpStatus.textContent = message;
+        otpStatus.classList.toggle("ok", ok);
+      };
+      const clearGeneratedCredentials = () => {
+        usernameInput.value = "";
+        passwordInput.value = "";
+        updateCreateControls();
+      };
+      const clearEmailOtp = () => {
+        emailVerified = false;
+        otpTokenInput.value = "";
+        otpInput.value = "";
+        setOtpStatus("");
+        clearGeneratedCredentials();
+      };
+      nameInput.addEventListener("input", clearGeneratedCredentials);
+      emailInput.addEventListener("input", clearEmailOtp);
+      roleInput.addEventListener("change", () => {
+        emailInput.required = needsEmail();
+        clearEmailOtp();
+        updateCreateControls();
+      });
+      otpInput.addEventListener("input", updateCreateControls);
+      sendOtpButton.addEventListener("click", async () => {
+        if (!hasValidEmail()) {
+          emailInput.focus();
           return;
         }
-        const response = await fetch(`/credentials/generate?display_name=${encodeURIComponent(name)}`);
+        clearEmailOtp();
+        setOtpStatus("Sending...");
+        const body = new URLSearchParams({ email: emailInput.value.trim(), role: roleInput.value });
+        const response = await fetch("/children/email-otp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          setOtpStatus(data.detail || "Could not send OTP.");
+          updateCreateControls();
+          return;
+        }
+        otpTokenInput.value = data.token || "";
+        const devOtp = data.dev_otp ? ` Dev OTP: ${data.dev_otp}` : "";
+        setOtpStatus(`OTP sent.${devOtp}`);
+        updateCreateControls();
+        otpInput.focus();
+      });
+      verifyOtpButton.addEventListener("click", async () => {
+        const body = new URLSearchParams({
+          email: emailInput.value.trim(),
+          otp_token: otpTokenInput.value,
+          otp_code: otpInput.value.trim(),
+        });
+        const response = await fetch("/children/email-otp/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          emailVerified = false;
+          setOtpStatus(data.detail || "OTP validation failed.");
+          updateCreateControls();
+          return;
+        }
+        emailVerified = true;
+        setOtpStatus("Email verified.", true);
+        clearGeneratedCredentials();
+      });
+      emailInput.required = needsEmail();
+      updateCreateControls();
+      generateButton.addEventListener("click", async () => {
+        const name = nameInput.value.trim();
+        const email = emailInput.value.trim();
+        if (!canGenerate()) {
+          (needsEmail() && !emailInput.validity.valid ? emailInput : nameInput).focus();
+          return;
+        }
+        const params = new URLSearchParams({
+          display_name: name,
+          role: roleInput.value,
+          email,
+          email_otp_token: otpTokenInput.value,
+        });
+        const response = await fetch(`/credentials/generate?${params.toString()}`);
         if (!response.ok) return;
         const data = await response.json();
-        document.querySelector("#username-input").value = data.username;
-        document.querySelector("#password-input").value = data.password;
+        usernameInput.value = data.username;
+        passwordInput.value = data.password;
+        updateCreateControls();
+      });
+      form.addEventListener("submit", (event) => {
+        if (!usernameInput.value.trim() || !passwordInput.value.trim()) {
+          event.preventDefault();
+          generateButton.focus();
+        }
       });
     }
   </script>

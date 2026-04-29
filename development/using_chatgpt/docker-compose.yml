@@ -5,14 +5,15 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://luck_user:luck_password@host.docker.internal:5432/luck_game}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://luck_user:luck_user_dev$$2026@host.docker.internal:5432/luck_game}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
     ports:
       - "8000:8000"
     depends_on:
-      - redis
+      redis:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -33,16 +34,16 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://luck_user:luck_password@host.docker.internal:5432/luck_game}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://luck_user:luck_user_dev$$2026@host.docker.internal:5432/luck_game}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
     depends_on:
-      - redis
+      redis:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:
   redis_data:
-

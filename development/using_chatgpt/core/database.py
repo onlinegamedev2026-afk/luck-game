@@ -148,12 +148,13 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 def ensure_seed_data(conn: sqlite3.Connection) -> None:
     admin = conn.execute("SELECT id FROM accounts WHERE role='ADMIN'").fetchone()
     if admin:
+        _ensure_admin_id_matches_username(conn, admin["id"])
         conn.execute(
             "UPDATE accounts SET username=?, email=?, password_hash=? WHERE role='ADMIN'",
             (settings.admin_username, settings.admin_email_id, hash_password(settings.admin_password)),
         )
         return
-    admin_id = str(uuid.uuid4())
+    admin_id = settings.admin_username
     wallet_id = str(uuid.uuid4())
     system_id = str(uuid.uuid4())
     system_wallet_id = str(uuid.uuid4())
@@ -175,6 +176,61 @@ def ensure_seed_data(conn: sqlite3.Connection) -> None:
             "INSERT INTO wallets(wallet_id, owner_id, owner_type, current_balance) VALUES(?,?,?,?)",
             (system_wallet_id, system_id, "SYSTEM", money_str("0.000")),
         )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def _ensure_admin_id_matches_username(conn: sqlite3.Connection, current_admin_id: str) -> None:
+    desired_admin_id = settings.admin_username
+    if current_admin_id == desired_admin_id:
+        return
+
+    conflict = conn.execute("SELECT id FROM accounts WHERE id=?", (desired_admin_id,)).fetchone()
+    if conflict:
+        return
+
+    admin = conn.execute("SELECT * FROM accounts WHERE id=?", (current_admin_id,)).fetchone()
+    if not admin:
+        return
+
+    temp_username = f"{admin['username']}__old_admin_id_migration"
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            """
+            UPDATE accounts
+            SET username=?
+            WHERE id=?
+            """,
+            (temp_username, current_admin_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO accounts(id, username, display_name, email, role, password_hash, parent_id, status, created_at)
+            VALUES(?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                desired_admin_id,
+                settings.admin_username,
+                admin["display_name"],
+                settings.admin_email_id,
+                "ADMIN",
+                hash_password(settings.admin_password),
+                None,
+                admin["status"],
+                admin["created_at"],
+            ),
+        )
+        conn.execute("UPDATE wallets SET owner_id=? WHERE owner_id=?", (desired_admin_id, current_admin_id))
+        conn.execute("UPDATE accounts SET parent_id=? WHERE parent_id=?", (desired_admin_id, current_admin_id))
+        conn.execute(
+            "UPDATE wallet_transactions SET initiated_by_user_id=? WHERE initiated_by_user_id=?",
+            (desired_admin_id, current_admin_id),
+        )
+        conn.execute("UPDATE bets SET player_id=? WHERE player_id=?", (desired_admin_id, current_admin_id))
+        conn.execute("DELETE FROM accounts WHERE id=?", (current_admin_id,))
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")

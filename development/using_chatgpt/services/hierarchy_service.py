@@ -1,10 +1,17 @@
 import sqlite3
+import re
 
 from core.security import hash_password
 from models.schemas import Actor
 from services.auth_service import actor_from_row
 from tasks.celery_app import send_email_job
 from utils.identity import generate_account_id
+
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def is_valid_email(email: str) -> bool:
+    return bool(EMAIL_PATTERN.fullmatch(email.strip()))
 
 
 class HierarchyService:
@@ -29,7 +36,8 @@ class HierarchyService:
         ).fetchall()
         return [actor_from_row(row) for row in rows]
 
-    def can_create(self, actor: Actor, child_role: str) -> bool:
+    @staticmethod
+    def can_create(actor: Actor, child_role: str) -> bool:
         if actor.role == "ADMIN":
             return child_role == "AGENT"
         if actor.role == "AGENT":
@@ -39,8 +47,11 @@ class HierarchyService:
     def create_child(self, actor: Actor, username: str, display_name: str, email: str, role: str, password: str) -> str:
         if not self.can_create(actor, role):
             raise PermissionError("This role cannot create that account type.")
-        if role == "AGENT" and not email:
-            raise ValueError("Agent email is required for OTP login.")
+        email = email.strip()
+        if role == "AGENT" and not is_valid_email(email):
+            raise ValueError("Enter a valid agent email before creating credentials.")
+        if not username or not password:
+            raise ValueError("Generate the user ID and password before creating the account.")
         child_id = username or generate_account_id(display_name)
         wallet_id = generate_account_id(f"{display_name} wallet")
         self.conn.execute("BEGIN IMMEDIATE")
