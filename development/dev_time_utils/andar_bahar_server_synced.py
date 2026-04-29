@@ -3,7 +3,7 @@ monkey.patch_all()
 
 from flask import Flask, jsonify, render_template_string, request
 from flask_socketio import SocketIO, emit
-from andar_bahar_modified import initiate_game
+from dev_time_utils.andar_bahar_modified import initiate_game
 import random
 import gevent
 

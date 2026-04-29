@@ -61,6 +61,18 @@ class HierarchyService:
         ).fetchall()
         return [actor_from_row(row) for row in rows], int(total)
 
+    def email_exists(self, email: str, exclude_account_id: str | None = None) -> bool:
+        email = email.strip()
+        if not email:
+            return False
+        params: list[str] = [email]
+        where = "email IS NOT NULL AND LOWER(TRIM(email))=LOWER(?)"
+        if exclude_account_id:
+            where += " AND id<>?"
+            params.append(exclude_account_id)
+        row = self.conn.execute(f"SELECT 1 FROM accounts WHERE {where} LIMIT 1", params).fetchone()
+        return bool(row)
+
     @staticmethod
     def can_create(actor: Actor, child_role: str) -> bool:
         if actor.role == "ADMIN":
@@ -73,8 +85,12 @@ class HierarchyService:
         if not self.can_create(actor, role):
             raise PermissionError("This role cannot create that account type.")
         email = email.strip()
-        if role == "AGENT" and not is_valid_email(email):
+        if email and not is_valid_email(email):
+            raise ValueError("Enter a valid email before creating credentials.")
+        if role == "AGENT" and not email:
             raise ValueError("Enter a valid agent email before creating credentials.")
+        if self.email_exists(email):
+            raise ValueError("This email ID is already used by another account.")
         if not username or not password:
             raise ValueError("Generate the user ID and password before creating the account.")
         child_id = username or generate_account_id(display_name)
@@ -92,6 +108,12 @@ class HierarchyService:
             self.conn.execute("COMMIT")
             self._send_creation_emails(actor, child_id, username, display_name, email, role, password)
             return child_id
+        except sqlite3.IntegrityError as exc:
+            self.conn.execute("ROLLBACK")
+            message = str(exc).lower()
+            if "email" in message or "idx_accounts_email_unique" in message:
+                raise ValueError("This email ID is already used by another account.") from exc
+            raise ValueError("Account ID or wallet ID already exists.") from exc
         except Exception:
             self.conn.execute("ROLLBACK")
             raise

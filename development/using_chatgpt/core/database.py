@@ -140,6 +140,7 @@ def init_db() -> None:
         )
         ensure_schema(conn)
         ensure_seed_data(conn)
+        ensure_unique_emails(conn)
     finally:
         conn.close()
 
@@ -151,11 +152,46 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         pass
 
 
+def ensure_unique_emails(conn: sqlite3.Connection) -> None:
+    _deduplicate_existing_emails(conn)
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_unique
+        ON accounts(LOWER(TRIM(email)))
+        WHERE email IS NOT NULL AND TRIM(email) <> ''
+        """
+    )
+
+
+def _deduplicate_existing_emails(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT id, role, email, created_at
+        FROM accounts
+        WHERE email IS NOT NULL AND TRIM(email) <> ''
+        """
+    ).fetchall()
+    by_email: dict[str, list] = {}
+    for row in rows:
+        trimmed = row["email"].strip()
+        if trimmed != row["email"]:
+            conn.execute("UPDATE accounts SET email=? WHERE id=?", (trimmed, row["id"]))
+        by_email.setdefault(trimmed.lower(), []).append(row)
+
+    for duplicates in by_email.values():
+        if len(duplicates) < 2:
+            continue
+        duplicates.sort(key=lambda row: (0 if row["role"] == "ADMIN" else 1, row["created_at"], row["id"]))
+        for row in duplicates[1:]:
+            conn.execute("UPDATE accounts SET email=NULL WHERE id=?", (row["id"],))
+
+
 def ensure_seed_data(conn: sqlite3.Connection) -> None:
     admin = conn.execute("SELECT id FROM accounts WHERE role='ADMIN'").fetchone()
     if admin:
         _ensure_admin_id_matches_username(conn, admin["id"])
         _ensure_admin_wallet_id(conn)
+        _free_admin_email(conn)
         conn.execute(
             "UPDATE accounts SET username=?, email=?, password_hash=? WHERE role='ADMIN'",
             (settings.admin_username, settings.admin_email_id, hash_password(settings.admin_password)),
@@ -187,6 +223,22 @@ def ensure_seed_data(conn: sqlite3.Connection) -> None:
     except Exception:
         conn.execute("ROLLBACK")
         raise
+
+
+def _free_admin_email(conn: sqlite3.Connection) -> None:
+    email = settings.admin_email_id.strip()
+    if not email:
+        return
+    conn.execute(
+        """
+        UPDATE accounts
+        SET email=NULL
+        WHERE role <> 'ADMIN'
+          AND email IS NOT NULL
+          AND LOWER(TRIM(email))=LOWER(?)
+        """,
+        (email,),
+    )
 
 
 def _ensure_admin_id_matches_username(conn: sqlite3.Connection, current_admin_id: str) -> None:

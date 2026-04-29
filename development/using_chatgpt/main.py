@@ -257,7 +257,13 @@ def _check_otp_send_rate(key: str) -> int:
 
 
 @app.post("/children/email-otp/send")
-def send_child_email_otp(request: Request, email: str = Form(...), role: str = Form("AGENT"), actor: Actor = Depends(current_actor)):
+def send_child_email_otp(
+    request: Request,
+    email: str = Form(...),
+    role: str = Form("AGENT"),
+    actor: Actor = Depends(current_actor),
+    conn=Depends(db),
+):
     email = email.strip()
     if not HierarchyService.can_create(actor, role):
         raise HTTPException(status_code=403)
@@ -265,6 +271,8 @@ def send_child_email_otp(request: Request, email: str = Form(...), role: str = F
         return JSONResponse({"required": False, "verified": True})
     if not is_valid_email(email):
         raise HTTPException(status_code=400, detail="Enter a valid agent email first.")
+    if HierarchyService(conn).email_exists(email):
+        raise HTTPException(status_code=400, detail="This email ID is already used by another account.")
     retry_after = _check_otp_send_rate(f"{actor.id}:{email}:{request.client.host if request.client else 'unknown'}")
     if retry_after:
         raise HTTPException(status_code=429, detail=f"Please wait {retry_after} seconds before requesting another OTP.")
@@ -319,6 +327,7 @@ def generate_credentials(
     email: str = "",
     email_otp_token: str = "",
     actor: Actor = Depends(current_actor),
+    conn=Depends(db),
 ):
     if actor.role == "USER":
         raise HTTPException(status_code=403)
@@ -327,6 +336,8 @@ def generate_credentials(
     if role == "AGENT":
         if not is_valid_email(email):
             raise HTTPException(status_code=400, detail="Enter a valid agent email first.")
+        if HierarchyService(conn).email_exists(email):
+            raise HTTPException(status_code=400, detail="This email ID is already used by another account.")
         try:
             _require_verified_child_email(actor, email, email_otp_token)
         except ValueError as exc:

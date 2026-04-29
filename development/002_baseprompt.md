@@ -83,3 +83,21 @@ The target folder of the web application is:
 ```
 ---
 ---
+## prompt - 006 
+`status` : **Done**
+```
+1. check the existing webapplication in ./using_chatgpt
+```
+```
+now do the following updates :- 
+1. The email ID must be globally unique across the system. 
+   This means no two Admins, Agents, or Users can share the same email ID. 
+   An email ID used by an Admin cannot be used by an Agent or User, and vice versa.
+   if required clean the entire database first then implement that
+
+Do not break any existing logic that is not being changed.
+
+the target folder of the webapplication ./using_chatgpt
+```
+---
+---

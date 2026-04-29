@@ -2,7 +2,7 @@ import tracemalloc
 
 def tin_patti_game_memory_profiler():
     tracemalloc.start()
-    from tin_patti_modified import initiate_game
+    from dev_time_utils.tin_patti_modified import initiate_game
     import random
     import json
     import tqdm
