@@ -10,6 +10,7 @@ from games.andar_bahar import AndarBaharGame
 from games.tin_patti import TinPattiGame
 from models.schemas import Actor
 from realtime.manager import manager
+from services.hierarchy_service import HierarchyService
 from transactions.ledger import LedgerService
 from utils.money import money, money_str
 
@@ -197,6 +198,7 @@ class GameOrchestrator:
                     "UPDATE game_sessions SET status='COMPLETED', winner=?, completed_at=CURRENT_TIMESTAMP WHERE session_id=?",
                     (self._winner[self.game_key], session_id),
                 )
+                HierarchyService(self.conn).process_pending_deletions()
                 await manager.broadcast(
                     "game_result",
                     {

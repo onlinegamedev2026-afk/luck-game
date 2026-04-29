@@ -127,6 +127,12 @@ def init_db() -> None:
                 completed_at TEXT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS pending_account_deletions (
+                account_id TEXT PRIMARY KEY,
+                requested_by TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
             CREATE INDEX IF NOT EXISTS idx_wallet_tx_from ON wallet_transactions(from_wallet_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_wallet_tx_to ON wallet_transactions(to_wallet_id, created_at DESC);
@@ -149,13 +155,14 @@ def ensure_seed_data(conn: sqlite3.Connection) -> None:
     admin = conn.execute("SELECT id FROM accounts WHERE role='ADMIN'").fetchone()
     if admin:
         _ensure_admin_id_matches_username(conn, admin["id"])
+        _ensure_admin_wallet_id(conn)
         conn.execute(
             "UPDATE accounts SET username=?, email=?, password_hash=? WHERE role='ADMIN'",
             (settings.admin_username, settings.admin_email_id, hash_password(settings.admin_password)),
         )
         return
     admin_id = settings.admin_username
-    wallet_id = str(uuid.uuid4())
+    wallet_id = "admin_wallet"
     system_id = str(uuid.uuid4())
     system_wallet_id = str(uuid.uuid4())
     conn.execute("BEGIN IMMEDIATE")
@@ -235,3 +242,34 @@ def _ensure_admin_id_matches_username(conn: sqlite3.Connection, current_admin_id
     except Exception:
         conn.execute("ROLLBACK")
         raise
+
+
+def _ensure_admin_wallet_id(conn: sqlite3.Connection) -> None:
+    admin = conn.execute("SELECT id FROM accounts WHERE role='ADMIN'").fetchone()
+    if not admin:
+        return
+    current = conn.execute("SELECT wallet_id FROM wallets WHERE owner_id=?", (admin["id"],)).fetchone()
+    if not current or current["wallet_id"] == "admin_wallet":
+        return
+    conflict = conn.execute("SELECT wallet_id FROM wallets WHERE wallet_id='admin_wallet'").fetchone()
+    if conflict:
+        return
+    old_wallet_id = current["wallet_id"]
+    if not isinstance(conn, sqlite3.Connection):
+        try:
+            conn.execute("UPDATE wallets SET wallet_id=? WHERE wallet_id=?", ("admin_wallet", old_wallet_id))
+        except Exception:
+            return
+        return
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("UPDATE wallets SET wallet_id='admin_wallet' WHERE wallet_id=?", (old_wallet_id,))
+        conn.execute("UPDATE wallet_transactions SET from_wallet_id='admin_wallet' WHERE from_wallet_id=?", (old_wallet_id,))
+        conn.execute("UPDATE wallet_transactions SET to_wallet_id='admin_wallet' WHERE to_wallet_id=?", (old_wallet_id,))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")

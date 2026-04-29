@@ -24,6 +24,11 @@ button.secondary {
   color: #24563a;
   border: 1px solid #becabb;
 }
+.button-link.secondary {
+  background: #edf3ea;
+  color: #24563a;
+  border: 1px solid #becabb;
+}
 button:disabled {
   cursor: not-allowed;
   opacity: .45;
@@ -95,6 +100,14 @@ button.danger { background: #a73535; }
 .topbar div, .topbar nav { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .topbar span { color: #657061; }
 .topbar a { padding: 8px 10px; border-radius: 6px; background: #edf3ea; }
+.wallet-amount {
+  color: #0d6b32;
+  font-size: 1.08em;
+  font-weight: 900;
+}
+.child-wallet {
+  color: #0a7a37;
+}
 .layout { width: min(1180px, calc(100vw - 28px)); margin: 22px auto; display: grid; gap: 18px; }
 .panel {
   background: white;
@@ -131,9 +144,18 @@ button.danger { background: #a73535; }
 .panel h2 { margin: 0 0 14px; font-size: 20px; }
 .search { display: flex; gap: 10px; margin-bottom: 14px; }
 .search input { flex: 1; }
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 10px;
+}
+.password-form {
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  align-items: center;
+}
 .row {
   display: grid;
-  grid-template-columns: minmax(230px, 1fr) repeat(4, auto);
+  grid-template-columns: minmax(230px, 1fr) repeat(5, auto);
   gap: 10px;
   align-items: center;
   padding: 12px 0;
@@ -144,6 +166,18 @@ button.danger { background: #a73535; }
 .row span, .muted, .ledger span { color: #697566; font-size: 13px; }
 .row form { display: flex; gap: 6px; }
 .row input { width: 94px; }
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid #edf1eb;
+}
+.pagination div {
+  display: flex;
+  gap: 8px;
+}
 .ledger { display: grid; gap: 8px; }
 .ledger div {
   display: grid;
@@ -259,6 +293,8 @@ button.danger { background: #a73535; }
 .h-badge { text-align: center; padding: 10px 0; border-radius: 6px; background: rgba(255,255,255,.12); }
 @media (max-width: 760px) {
   .row { grid-template-columns: 1fr; }
+  .password-form { grid-template-columns: 1fr; }
+  .pagination { align-items: flex-start; flex-direction: column; }
   .otp-tools { grid-template-columns: 1fr; }
   .groups { grid-template-columns: 1fr; }
   .game-card { grid-template-columns: 1fr; }

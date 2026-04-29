@@ -1,5 +1,9 @@
 async function refreshPlayerAmount() {
   const response = await fetch("/api/me", { headers: { Accept: "application/json" } });
+  if (response.status === 401 || response.status === 403) {
+    window.location.href = "/";
+    return;
+  }
   if (!response.ok) return;
   const data = await response.json();
   const balance = document.getElementById("player-balance");

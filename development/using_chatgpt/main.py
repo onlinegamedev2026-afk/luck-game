@@ -30,6 +30,11 @@ templates = Jinja2Templates(directory="templates")
 CAPTCHA_STORE: dict[str, tuple[int, float]] = {}
 OTP_STORE: dict[str, tuple[str, str, str, float]] = {}
 CHILD_EMAIL_OTP_STORE: dict[str, dict[str, str | float | bool]] = {}
+CHILD_EMAIL_OTP_RATE: dict[str, list[float]] = {}
+OTP_TTL_SECONDS = 30 * 60
+OTP_SEND_COOLDOWN_SECONDS = 60
+OTP_SEND_WINDOW_SECONDS = 30 * 60
+OTP_SEND_MAX_PER_WINDOW = 5
 
 
 def back_to(path: str, *, error: str | None = None, notice: str | None = None) -> RedirectResponse:
@@ -92,8 +97,12 @@ def current_actor(request: Request, conn=Depends(db)) -> Actor:
     if not session:
         raise HTTPException(status_code=401)
     actor = AuthService(conn).get_actor(session[0])
-    if not actor or actor.status != "ACTIVE":
+    if not actor:
         raise HTTPException(status_code=401)
+    if actor.status != "ACTIVE":
+        active_game = GameOrchestrator(conn).active_game_for_player(actor)
+        if not active_game or not (request.url.path.startswith("/games") or request.url.path == "/api/me"):
+            raise HTTPException(status_code=401)
     return actor
 
 
@@ -117,16 +126,19 @@ def login(
 ):
     if not verify_captcha(captcha_token, captcha_answer):
         return back_to("/", error="Captcha validation failed.")
-    actor = AuthService(conn).verify_credentials(username, password, role)
+    auth = AuthService(conn)
+    actor = auth.verify_credentials(username, password, role)
     if not actor:
+        if auth.credential_failure_reason(username, password, role) == "inactive":
+            return back_to("/", error="Currently you are inactive please contact your agent")
         return back_to("/", error="Invalid login details.")
     if role in {"ADMIN", "AGENT"}:
         if not actor.email:
             return back_to("/", error="This account does not have an email for OTP login.")
         code = f"{secrets.randbelow(900000) + 100000}"
         otp_token = secrets.token_urlsafe(32)
-        OTP_STORE[otp_token] = (actor.id, actor.role, otp_hash(code), time.time() + 600)
-        delivery = queue_email(actor.email, "Luck Game login OTP", f"Your Luck Game login OTP is {code}. It expires in 10 minutes.")
+        OTP_STORE[otp_token] = (actor.id, actor.role, otp_hash(code), time.time() + OTP_TTL_SECONDS)
+        delivery = queue_email(actor.email, "Luck Game login OTP", f"Your Luck Game login OTP is {code}. It expires in 30 minutes.")
         return templates.TemplateResponse(
             "otp.html",
             {
@@ -169,13 +181,16 @@ def logout():
 def dashboard(
     request: Request,
     q: str = "",
+    role_filter: str = "ALL",
+    page: int = 1,
     error: str = "",
     notice: str = "",
     actor: Actor = Depends(current_actor),
     conn=Depends(db),
 ):
-    children = HierarchyService(conn).list_children(actor, q)
+    children, child_total = HierarchyService(conn).list_children_page(actor, q, role_filter, page, 20)
     txs = WalletService(conn).transactions_for_actor(actor)[:20]
+    page = max(page, 1)
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -184,6 +199,11 @@ def dashboard(
             "children": children,
             "transactions": txs,
             "q": q,
+            "role_filter": role_filter if role_filter in {"ALL", "USER", "AGENT"} else "ALL",
+            "page": page,
+            "child_total": child_total,
+            "has_prev": page > 1,
+            "has_next": page * 20 < child_total,
             "error": error,
             "notice": notice,
         },
@@ -224,8 +244,20 @@ def _require_verified_child_email(actor: Actor, email: str, token: str) -> None:
         raise ValueError("Verify the agent email with OTP before generating credentials.")
 
 
+def _check_otp_send_rate(key: str) -> int:
+    now = time.time()
+    attempts = [stamp for stamp in CHILD_EMAIL_OTP_RATE.get(key, []) if stamp > now - OTP_SEND_WINDOW_SECONDS]
+    if attempts and now - attempts[-1] < OTP_SEND_COOLDOWN_SECONDS:
+        return int(OTP_SEND_COOLDOWN_SECONDS - (now - attempts[-1])) + 1
+    if len(attempts) >= OTP_SEND_MAX_PER_WINDOW:
+        return int(OTP_SEND_WINDOW_SECONDS - (now - attempts[0])) + 1
+    attempts.append(now)
+    CHILD_EMAIL_OTP_RATE[key] = attempts
+    return 0
+
+
 @app.post("/children/email-otp/send")
-def send_child_email_otp(email: str = Form(...), role: str = Form("AGENT"), actor: Actor = Depends(current_actor)):
+def send_child_email_otp(request: Request, email: str = Form(...), role: str = Form("AGENT"), actor: Actor = Depends(current_actor)):
     email = email.strip()
     if not HierarchyService.can_create(actor, role):
         raise HTTPException(status_code=403)
@@ -233,19 +265,22 @@ def send_child_email_otp(email: str = Form(...), role: str = Form("AGENT"), acto
         return JSONResponse({"required": False, "verified": True})
     if not is_valid_email(email):
         raise HTTPException(status_code=400, detail="Enter a valid agent email first.")
+    retry_after = _check_otp_send_rate(f"{actor.id}:{email}:{request.client.host if request.client else 'unknown'}")
+    if retry_after:
+        raise HTTPException(status_code=429, detail=f"Please wait {retry_after} seconds before requesting another OTP.")
     code = f"{secrets.randbelow(900000) + 100000}"
     token = secrets.token_urlsafe(32)
     CHILD_EMAIL_OTP_STORE[token] = {
         "creator_id": actor.id,
         "email": email,
         "code_hash": otp_hash(code),
-        "expires_at": time.time() + 600,
+        "expires_at": time.time() + OTP_TTL_SECONDS,
         "verified": False,
     }
     delivery = queue_email(
         email,
         "Luck Game agent email verification OTP",
-        f"Your Luck Game agent email verification OTP is {code}. It expires in 10 minutes.",
+        f"Your Luck Game agent email verification OTP is {code}. It expires in 30 minutes.",
     )
     return JSONResponse(
         {
@@ -330,6 +365,31 @@ def set_status_from_form(
     conn=Depends(db),
 ):
     return set_status(child_id, status, actor, conn)
+
+
+@app.post("/password/update")
+def update_password(
+    old_password: str = Form(...),
+    new_password: str = Form(...),
+    actor: Actor = Depends(current_actor),
+    conn=Depends(db),
+):
+    if actor.role == "ADMIN":
+        return back_to("/dashboard", error="Admin password cannot be changed from this page.")
+    try:
+        HierarchyService(conn).update_password(actor, old_password, new_password)
+        return back_to("/dashboard", notice="Password updated successfully.")
+    except ValueError as exc:
+        return back_to("/dashboard", error=str(exc))
+
+
+@app.post("/children/regenerate-password")
+def regenerate_child_password(child_id: str = Form(...), actor: Actor = Depends(current_actor), conn=Depends(db)):
+    try:
+        new_password = HierarchyService(conn).regenerate_child_password(actor, child_id)
+        return back_to("/dashboard", notice=f"New password for {child_id}: {new_password}")
+    except (PermissionError, ValueError) as exc:
+        return back_to("/dashboard", error=str(exc))
 
 
 @app.post("/children/{child_id}/delete")
@@ -473,6 +533,8 @@ def api_me(actor: Actor = Depends(current_actor), conn=Depends(db)):
 
 @app.post("/games/{game_key}/betting/open")
 async def open_betting(game_key: str, actor: Actor = Depends(current_actor), conn=Depends(db)):
+    if actor.status != "ACTIVE":
+        return back_to(f"/games/{game_key}", error="Currently you are inactive please contact your agent")
     try:
         await GameOrchestrator(conn, game_key).open_betting()
         return back_to(f"/games/{game_key}", notice="Betting opened successfully.")
@@ -482,6 +544,8 @@ async def open_betting(game_key: str, actor: Actor = Depends(current_actor), con
 
 @app.post("/games/{game_key}/bet")
 async def bet(game_key: str, side: str = Form(...), amount: Decimal = Form(...), actor: Actor = Depends(current_actor), conn=Depends(db)):
+    if actor.status != "ACTIVE":
+        return back_to(f"/games/{game_key}", error="Currently you are inactive please contact your agent")
     try:
         await GameOrchestrator(conn, game_key).place_bet(actor, side, amount)
         return back_to(f"/games/{game_key}", notice="Bet placed successfully.")
@@ -491,6 +555,8 @@ async def bet(game_key: str, side: str = Form(...), amount: Decimal = Form(...),
 
 @app.post("/games/{game_key}/start")
 async def start_game(game_key: str, actor: Actor = Depends(current_actor), conn=Depends(db)):
+    if actor.status != "ACTIVE":
+        return back_to(f"/games/{game_key}", error="Currently you are inactive please contact your agent")
     try:
         orchestrator = GameOrchestrator(conn, game_key)
     except ValueError:

@@ -28,6 +28,20 @@ class AuthService:
         return sign_session(actor.id, actor.role) if actor else None
 
     def verify_credentials(self, username: str, password: str, expected_role: str) -> Actor | None:
+        row = self._credential_row(username, expected_role)
+        if not row or row["status"] != "ACTIVE":
+            return None
+        if not verify_password(password, row["password_hash"]):
+            return None
+        return actor_from_row(row)
+
+    def credential_failure_reason(self, username: str, password: str, expected_role: str) -> str:
+        row = self._credential_row(username, expected_role)
+        if row and row["status"] != "ACTIVE" and verify_password(password, row["password_hash"]):
+            return "inactive"
+        return "invalid"
+
+    def _credential_row(self, username: str, expected_role: str):
         row = self.conn.execute(
             """
             SELECT a.*, w.wallet_id, w.current_balance
@@ -36,11 +50,7 @@ class AuthService:
             """,
             (username, expected_role),
         ).fetchone()
-        if not row or row["status"] != "ACTIVE":
-            return None
-        if not verify_password(password, row["password_hash"]):
-            return None
-        return actor_from_row(row)
+        return row
 
     def get_actor(self, user_id: str) -> Actor | None:
         row = self.conn.execute(
