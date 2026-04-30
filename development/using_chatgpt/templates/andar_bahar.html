@@ -15,12 +15,22 @@
     {% if error %}<section class="alert error">{{ error }}</section>{% endif %}
     {% if notice %}<section class="alert notice">{{ notice }}</section>{% endif %}
     <section class="game-actions">
-      <form method="post" action="/games/{{ game.key }}/betting/open"><button>Open Betting</button></form>
-      <form method="post" action="/games/{{ game.key }}/bet"><select name="side"><option value="A">A / Andar</option><option value="B">B / Bahar</option></select><input name="amount" value="10.000" inputmode="decimal"><button>Place Bet</button></form>
-      <form method="post" action="/games/{{ game.key }}/start"><button>Start Round</button></form>
+      <form method="post" action="/games/{{ game.key }}/bet" id="bet-form" class="bet-form">
+        <select name="side" id="bet-side"><option value="A">A / Andar</option><option value="B">B / Bahar</option></select>
+        <input name="amount" id="bet-amount" value="10.000" inputmode="decimal">
+        <button id="bet-submit">Place Bet</button>
+        <span id="bet-status" class="bet-status">Waiting for betting time</span>
+      </form>
+      {% if actor.role in ["ADMIN", "AGENT"] %}
+      <div id="betting-totals" class="betting-totals" hidden>A / Andar: <b id="total-a">0.000</b> units · B / Bahar: <b id="total-b">0.000</b> units</div>
+      {% endif %}
       <span id="conn-status">Offline</span>
     </section>
     <section id="banner" class="banner">Connecting...</section>
+    <section class="my-bets-panel">
+      <h2>My Bets This Game Cycle</h2>
+      <div id="my-bets-list" class="my-bets-list"><p class="muted">No bets placed in this cycle.</p></div>
+    </section>
     <section class="joker-panel">
       <div><strong>Joker</strong><span>Reference card</span></div>
       <div id="joker-card" class="cards-row"><div class="slot"></div></div>

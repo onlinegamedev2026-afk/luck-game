@@ -37,7 +37,7 @@
     {% if actor.role != "USER" %}
     {% if actor.role == "ADMIN" %}
     <section class="panel">
-      <h2>Admin Money</h2>
+      <h2>Admin Units</h2>
       <form class="grid-form admin-money" method="post" action="/wallet/admin/adjust">
         <input name="amount" value="100.000" inputmode="decimal" required>
         <select name="direction">
@@ -92,8 +92,8 @@
             <strong>{{ child.display_name }}</strong>
             <span>{{ child.role }} - {{ child.username }} - {{ child.id[:8] }} - <strong class="wallet-amount child-wallet">{{ "%.3f"|format(child.balance) }}</strong></span>
           </div>
-          <form method="post" action="/wallet/add"><input type="hidden" name="child_id" value="{{ child.id }}"><input name="amount" value="10.000"><button>+ Money</button></form>
-          <form method="post" action="/wallet/deduct"><input type="hidden" name="child_id" value="{{ child.id }}"><input name="amount" value="10.000"><button>- Money</button></form>
+          <form method="post" action="/wallet/add"><input type="hidden" name="child_id" value="{{ child.id }}"><input name="amount" value="10.000"><button>+Units</button></form>
+          <form method="post" action="/wallet/deduct"><input type="hidden" name="child_id" value="{{ child.id }}"><input name="amount" value="10.000"><button>-Units</button></form>
           <form method="post" action="/children/regenerate-password"><input type="hidden" name="child_id" value="{{ child.id }}"><button>Regenerate Password</button></form>
           <form method="post" action="/children/status">
             <input type="hidden" name="child_id" value="{{ child.id }}">
@@ -156,7 +156,12 @@
         return hasName && emailReady;
       };
       const updateCreateControls = () => {
+        emailInput.hidden = !needsEmail();
         otpPanel.hidden = !needsEmail();
+        if (!needsEmail()) {
+          emailInput.required = false;
+          emailInput.value = "";
+        }
         sendOtpButton.disabled = !needsEmail() || !hasValidEmail();
         otpInput.disabled = !needsEmail() || !otpTokenInput.value || emailVerified;
         verifyOtpButton.disabled = otpInput.disabled || otpInput.value.trim().length !== 6;

@@ -1,0 +1,320 @@
+import sqlite3
+import uuid
+from typing import Any
+from pathlib import Path
+
+from core.config import settings
+from core.security import hash_password
+from utils.money import money_str
+
+
+def _sqlite_path() -> Path:
+    raw = settings.database_url.replace("sqlite:///", "")
+    return Path(raw)
+
+
+class PostgresConnection:
+    def __init__(self, dsn: str):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        self._conn = psycopg.connect(dsn, autocommit=True, row_factory=dict_row)
+
+    @staticmethod
+    def _sql(sql: str) -> str:
+        command = sql.strip().upper()
+        if command == "BEGIN IMMEDIATE":
+            return "BEGIN"
+        return sql.replace("?", "%s")
+
+    def execute(self, sql: str, params: Any = None):
+        return self._conn.execute(self._sql(sql), params or ())
+
+    def executescript(self, sql: str) -> None:
+        for statement in sql.split(";"):
+            statement = statement.strip()
+            if statement:
+                self.execute(statement)
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def connect() -> sqlite3.Connection | PostgresConnection:
+    if settings.database_url.startswith(("postgresql://", "postgres://")):
+        return PostgresConnection(settings.database_url)
+
+    db_path = _sqlite_path()
+    conn = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
+def init_db() -> None:
+    conn = connect()
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS accounts (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL,
+                email TEXT NULL,
+                role TEXT NOT NULL CHECK(role IN ('ADMIN','AGENT','USER','SYSTEM')),
+                password_hash TEXT NOT NULL,
+                parent_id TEXT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE','INACTIVE')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS wallets (
+                wallet_id TEXT PRIMARY KEY,
+                owner_id TEXT NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE,
+                owner_type TEXT NOT NULL CHECK(owner_type IN ('ADMIN','AGENT','USER','SYSTEM')),
+                current_balance TEXT NOT NULL DEFAULT '0.000',
+                status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE','LOCKED','FROZEN','CLOSED')),
+                version INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS wallet_transactions (
+                transaction_id TEXT PRIMARY KEY,
+                idempotency_key TEXT NOT NULL UNIQUE,
+                transaction_type TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                from_wallet_id TEXT NULL REFERENCES wallets(wallet_id),
+                to_wallet_id TEXT NULL REFERENCES wallets(wallet_id),
+                initiated_by_user_id TEXT NOT NULL,
+                initiated_by_user_type TEXT NOT NULL,
+                amount TEXT NOT NULL,
+                fee_amount TEXT NOT NULL DEFAULT '0.000',
+                net_amount TEXT NOT NULL,
+                balance_before_from TEXT NULL,
+                balance_after_from TEXT NULL,
+                balance_before_to TEXT NULL,
+                balance_after_to TEXT NULL,
+                reference_type TEXT NULL,
+                reference_id TEXT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                failure_reason TEXT NULL,
+                remarks TEXT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                completed_at TEXT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS bets (
+                bet_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                player_id TEXT NOT NULL REFERENCES accounts(id),
+                side TEXT NOT NULL CHECK(side IN ('A','B')),
+                amount TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PLACED',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS game_sessions (
+                session_id TEXT PRIMARY KEY,
+                game_key TEXT NOT NULL,
+                status TEXT NOT NULL,
+                group_a_total TEXT NOT NULL DEFAULT '0.000',
+                group_b_total TEXT NOT NULL DEFAULT '0.000',
+                winner TEXT NULL,
+                payload TEXT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                completed_at TEXT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS pending_account_deletions (
+                account_id TEXT PRIMARY KEY,
+                requested_by TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_wallet_tx_from ON wallet_transactions(from_wallet_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_wallet_tx_to ON wallet_transactions(to_wallet_id, created_at DESC);
+            """
+        )
+        ensure_schema(conn)
+        ensure_seed_data(conn)
+        ensure_unique_emails(conn)
+    finally:
+        conn.close()
+
+
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("ALTER TABLE accounts ADD COLUMN email TEXT NULL")
+    except Exception:
+        pass
+
+
+def ensure_unique_emails(conn: sqlite3.Connection) -> None:
+    _deduplicate_existing_emails(conn)
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email_unique
+        ON accounts(LOWER(TRIM(email)))
+        WHERE email IS NOT NULL AND TRIM(email) <> ''
+        """
+    )
+
+
+def _deduplicate_existing_emails(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT id, role, email, created_at
+        FROM accounts
+        WHERE email IS NOT NULL AND TRIM(email) <> ''
+        """
+    ).fetchall()
+    by_email: dict[str, list] = {}
+    for row in rows:
+        trimmed = row["email"].strip()
+        if trimmed != row["email"]:
+            conn.execute("UPDATE accounts SET email=? WHERE id=?", (trimmed, row["id"]))
+        by_email.setdefault(trimmed.lower(), []).append(row)
+
+    for duplicates in by_email.values():
+        if len(duplicates) < 2:
+            continue
+        duplicates.sort(key=lambda row: (0 if row["role"] == "ADMIN" else 1, row["created_at"], row["id"]))
+        for row in duplicates[1:]:
+            conn.execute("UPDATE accounts SET email=NULL WHERE id=?", (row["id"],))
+
+
+def ensure_seed_data(conn: sqlite3.Connection) -> None:
+    admin = conn.execute("SELECT id FROM accounts WHERE role='ADMIN'").fetchone()
+    if admin:
+        _ensure_admin_id_matches_username(conn, admin["id"])
+        _ensure_admin_wallet_id(conn)
+        _free_admin_email(conn)
+        conn.execute(
+            "UPDATE accounts SET username=?, email=?, password_hash=? WHERE role='ADMIN'",
+            (settings.admin_username, settings.admin_email_id, hash_password(settings.admin_password)),
+        )
+        return
+    admin_id = settings.admin_username
+    wallet_id = "admin_wallet"
+    system_id = str(uuid.uuid4())
+    system_wallet_id = str(uuid.uuid4())
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            "INSERT INTO accounts(id, username, display_name, email, role, password_hash, parent_id) VALUES(?,?,?,?,?,?,NULL)",
+            (admin_id, settings.admin_username, "Main Admin", settings.admin_email_id, "ADMIN", hash_password(settings.admin_password)),
+        )
+        conn.execute(
+            "INSERT INTO wallets(wallet_id, owner_id, owner_type, current_balance) VALUES(?,?,?,?)",
+            (wallet_id, admin_id, "ADMIN", money_str("0.000")),
+        )
+        conn.execute(
+            "INSERT INTO accounts(id, username, display_name, email, role, password_hash, parent_id) VALUES(?,?,?,?,?,?,NULL)",
+            (system_id, "system_pool", "System Game Pool", "", "SYSTEM", hash_password(uuid.uuid4().hex)),
+        )
+        conn.execute(
+            "INSERT INTO wallets(wallet_id, owner_id, owner_type, current_balance) VALUES(?,?,?,?)",
+            (system_wallet_id, system_id, "SYSTEM", money_str("0.000")),
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def _free_admin_email(conn: sqlite3.Connection) -> None:
+    email = settings.admin_email_id.strip()
+    if not email:
+        return
+    conn.execute(
+        """
+        UPDATE accounts
+        SET email=NULL
+        WHERE role <> 'ADMIN'
+          AND email IS NOT NULL
+          AND LOWER(TRIM(email))=LOWER(?)
+        """,
+        (email,),
+    )
+
+
+def _ensure_admin_id_matches_username(conn: sqlite3.Connection, current_admin_id: str) -> None:
+    desired_admin_id = settings.admin_username
+    if current_admin_id == desired_admin_id:
+        return
+
+    conflict = conn.execute("SELECT id FROM accounts WHERE id=?", (desired_admin_id,)).fetchone()
+    if conflict:
+        return
+
+    admin = conn.execute("SELECT * FROM accounts WHERE id=?", (current_admin_id,)).fetchone()
+    if not admin:
+        return
+
+    temp_username = f"{admin['username']}__old_admin_id_migration"
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            "UPDATE accounts SET username=? WHERE id=?",
+            (temp_username, current_admin_id),
+        )
+        conn.execute(
+            "INSERT INTO accounts(id, username, display_name, email, role, password_hash, parent_id, status, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                desired_admin_id,
+                settings.admin_username,
+                admin["display_name"],
+                settings.admin_email_id,
+                "ADMIN",
+                hash_password(settings.admin_password),
+                None,
+                admin["status"],
+                admin["created_at"],
+            ),
+        )
+        conn.execute("UPDATE wallets SET owner_id=? WHERE owner_id=?", (desired_admin_id, current_admin_id))
+        conn.execute("UPDATE accounts SET parent_id=? WHERE parent_id=?", (desired_admin_id, current_admin_id))
+        conn.execute(
+            "UPDATE wallet_transactions SET initiated_by_user_id=? WHERE initiated_by_user_id=?",
+            (desired_admin_id, current_admin_id),
+        )
+        conn.execute("UPDATE bets SET player_id=? WHERE player_id=?", (desired_admin_id, current_admin_id))
+        conn.execute("DELETE FROM accounts WHERE id=?", (current_admin_id,))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def _ensure_admin_wallet_id(conn: sqlite3.Connection) -> None:
+    admin = conn.execute("SELECT id FROM accounts WHERE role='ADMIN'").fetchone()
+    if not admin:
+        return
+    current = conn.execute("SELECT wallet_id FROM wallets WHERE owner_id=?", (admin["id"],)).fetchone()
+    if not current or current["wallet_id"] == "admin_wallet":
+        return
+    conflict = conn.execute("SELECT wallet_id FROM wallets WHERE wallet_id='admin_wallet'").fetchone()
+    if conflict:
+        return
+    old_wallet_id = current["wallet_id"]
+    if not isinstance(conn, sqlite3.Connection):
+        try:
+            conn.execute("UPDATE wallets SET wallet_id=? WHERE wallet_id=?", ("admin_wallet", old_wallet_id))
+        except Exception:
+            return
+        return
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("UPDATE wallets SET wallet_id='admin_wallet' WHERE wallet_id=?", (old_wallet_id,))
+        conn.execute("UPDATE wallet_transactions SET from_wallet_id='admin_wallet' WHERE from_wallet_id=?", (old_wallet_id,))
+        conn.execute("UPDATE wallet_transactions SET to_wallet_id='admin_wallet' WHERE to_wallet_id=?", (old_wallet_id,))
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")

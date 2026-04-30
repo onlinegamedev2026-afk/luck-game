@@ -130,7 +130,7 @@ def login(
     actor = auth.verify_credentials(username, password, role)
     if not actor:
         if auth.credential_failure_reason(username, password, role) == "inactive":
-            return back_to("/", error="Currently you are inactive please contact your agent")
+            return back_to("/", error="Your account is inactive. Please contact your agent.")
         return back_to("/", error="Invalid login details.")
     if role in {"ADMIN", "AGENT"}:
         if not actor.email:
@@ -152,7 +152,10 @@ def login(
             },
         )
     token = AuthService(conn).login(username, password, role)
-    redirect = RedirectResponse("/dashboard", status_code=303)
+    if actor.role == "USER":
+        redirect = RedirectResponse("/games", status_code=303)
+    else:
+        redirect = RedirectResponse("/dashboard", status_code=303)
     redirect.set_cookie("luck_session", token, httponly=True, samesite="lax")
     return redirect
 
@@ -568,8 +571,8 @@ async def bet(
     wants_json = "application/json" in request.headers.get("accept", "")
     if actor.status != "ACTIVE":
         if wants_json:
-            return JSONResponse({"ok": False, "error": "Currently you are inactive please contact your agent"}, status_code=400)
-        return back_to(f"/games/{game_key}", error="Currently you are inactive please contact your agent")
+            return JSONResponse({"ok": False, "error": "Your account is inactive. Please contact your agent."}, status_code=400)
+        return back_to(f"/games/{game_key}", error="Your account is inactive. Please contact your agent.")
     try:
         orchestrator = GameOrchestrator(conn, game_key)
         await orchestrator.place_bet(actor, side, amount)

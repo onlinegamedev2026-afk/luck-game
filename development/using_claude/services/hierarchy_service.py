@@ -118,16 +118,7 @@ class HierarchyService:
             self.conn.execute("ROLLBACK")
             raise
 
-    def _send_creation_emails(
-        self,
-        actor: Actor,
-        child_id: str,
-        username: str,
-        display_name: str,
-        email: str,
-        role: str,
-        password: str,
-    ) -> None:
+    def _send_creation_emails(self, actor: Actor, child_id: str, username: str, display_name: str, email: str, role: str, password: str) -> None:
         created_at = self.conn.execute("SELECT created_at FROM accounts WHERE id=?", (child_id,)).fetchone()["created_at"]
         parent_subject = f"{role.title()} account created"
         parent_body = (

@@ -101,3 +101,98 @@ the target folder of the webapplication ./using_chatgpt
 ```
 ---
 ---
+## prompt - 007 
+`status` : **Done**
+```
+1. check the existing webapplication in ./using_chatgpt
+```
+```
+Now apply the following updates to the web application in the target folder:
+
+Target folder:
+./using_chatgpt
+
+Important:
+Do not break or modify any existing logic unless it is directly required for the updates below.
+
+Updates:
+
+1. Agent reactivation logic
+   - If any inactive Agent is reactivated, then all of its children at every level must also be reactivated.
+   - This includes child Agents, sub-child Agents, and Users under that Agent.
+
+2. Dashboard wallet action label update
+   - In the Admin dashboard and Agent dashboard, inside the immediate child list section:
+     - Replace the “+Money” button with “+Units”.
+     - Replace the “-Money” button with “-Units”.
+   - Only the button labels/text should change unless backend naming changes are absolutely required.
+
+3. Common game flow logic for all games
+
+   3.1 Transaction handling
+   - Ensure all game-related transactions work correctly before, during, and after the game.
+   - Betting must be tracked team-wise/hand-wise, for example:
+     - Team/Hand A total betting amount
+     - Team/Hand B total betting amount
+   - After the winner is declared:
+     - Winning team users must receive the correct credited amount.
+     - Losing team users must have the correct deducted amount as per the existing/prior transaction rules.
+   - Ensure wallet/unit balances, transaction records, and game result records remain consistent.
+
+   3.2 Betting session before game
+   - Before every game starts, there must be a 30-second betting session.
+   - During this time, users can place bets [give some way so that player can bet, check this area].
+   - Show a countdown message:
+     “Betting time pending: X seconds”
+
+   - After the 30-second betting session ends, start a 10-second cooldown/initiation session.
+   - During this cooldown:
+     - No more bets should be accepted.
+     - Show a countdown message:
+       “Game is being initiated in X seconds”
+     - Backend should calculate total betting amount per team/hand and any other required game data.
+     - These calculated values must remain hidden from normal Users.
+     - Only Admins and Agents can see total betting amount per team/hand.
+
+   3.3 After-game cooldown
+   - After the game ends and the winning team/hand is declared, start a 5-second cooldown.
+   - During this cooldown:
+     - All pending transactions and wallet/unit updates must be completed.
+     - Show a countdown message:
+       “Next betting will start within X seconds”
+
+   3.4 Player permissions
+   - Players/Users can only place bets.
+   - All other game actions must be automated and time-dependent.
+   - Game lifecycle:
+     - Betting time: 30 seconds
+     - Pre-game cooldown/initiation time: 10 seconds
+     - Gameplay time: based on the game’s existing logic
+     - After-game cooldown: 5 seconds
+
+   3.5 Game must always run
+   - The game must run every cycle, even if no users place bets.
+   - Cases:
+     - If there is no betting on either side:
+       - Game should still be played.
+       - No user transactions are required after the game.
+     - If betting happens on only one side:
+       - Game should still be played.
+       - Transactions must happen based on the declared winner and existing/prior payout rules.
+     - If betting happens on both sides:
+       - Game should run normally.
+       - Transactions must happen correctly after winner declaration.
+
+   3.6 Minimum bet
+   - Minimum bet amount per player is 10 units.
+   - Reject any bet below 10 units with a proper validation message.
+
+Final requirement:
+After implementing the updates, review the affected files and ensure:
+- Existing login, wallet, dashboard, agent hierarchy, and game logic are not broken.
+- Transaction handling is concurrency-safe.
+- No user can place bets outside the active betting session.
+- Admin and Agents can view total betting amounts per team/hand only after the betting phase ends and until the current game cycle completes; this information must remain hidden from Users at all times.
+```
+---
+---
