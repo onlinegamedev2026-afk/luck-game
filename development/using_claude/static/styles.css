@@ -411,11 +411,17 @@ img { display: block; max-width: 100%; }
   padding: 14px 20px; font-size: 15px; color: var(--g-text);
 }
 .result-panel.winner-result {
-  font-size: 26px; font-weight: 900; color: var(--g-gold);
-  background: linear-gradient(135deg, rgba(34,106,60,.88), rgba(5,22,12,.95));
-  border-color: rgba(232,200,74,.6);
-  box-shadow: 0 0 40px rgba(232,200,74,.22);
+  background: linear-gradient(135deg, rgba(34,106,60,.85), rgba(5,22,12,.95));
+  border-color: rgba(232,200,74,.55);
+  box-shadow: 0 0 32px rgba(232,200,74,.2);
 }
+.winner-celebration {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; flex-wrap: wrap;
+}
+.winner-cup      { font-size: 28px; line-height: 1; }
+.winner-headline { font-size: 22px; font-weight: 800; color: var(--g-gold); letter-spacing: .01em; }
+.winner-time     { font-size: 12px; color: rgba(240,236,224,.5); white-space: nowrap; }
 
 /* History */
 .history-section { padding: 0 2px; }

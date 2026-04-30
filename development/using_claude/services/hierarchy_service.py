@@ -177,6 +177,10 @@ class HierarchyService:
             return
         self._delete_accounts(ids)
 
+    def verify_own_password(self, actor: Actor, password: str) -> bool:
+        row = self.conn.execute("SELECT password_hash FROM accounts WHERE id=?", (actor.id,)).fetchone()
+        return bool(row and verify_password(password, row["password_hash"]))
+
     def update_password(self, actor: Actor, old_password: str, new_password: str) -> None:
         new_password = new_password.strip()
         if len(new_password) < 6:
@@ -187,6 +191,8 @@ class HierarchyService:
         self.conn.execute("UPDATE accounts SET password_hash=? WHERE id=?", (hash_password(new_password), actor.id))
         if actor.role == "AGENT":
             self._send_agent_self_password_email(actor, new_password)
+        elif actor.role == "ADMIN":
+            self._send_admin_self_password_email(actor, new_password)
 
     def regenerate_child_password(self, actor: Actor, child_id: str) -> str:
         row = self.ensure_immediate_child(actor, child_id)
@@ -294,6 +300,15 @@ class HierarchyService:
                 f"New Password: {new_password}"
             )
             self._queue_email(child_row["email"], subject, child_body)
+
+    def _send_admin_self_password_email(self, actor: Actor, new_password: str) -> None:
+        body = (
+            "Your Luck Game admin password was changed.\n\n"
+            f"Admin ID: {actor.id}\n"
+            f"Username: {actor.username}\n"
+            f"New Password: {new_password}"
+        )
+        self._queue_email(actor.email, "Luck Game admin password changed", body)
 
     def _send_agent_self_password_email(self, actor: Actor, new_password: str) -> None:
         body = (

@@ -41,9 +41,9 @@ class Settings:
     smtp_imap_port: int = int(os.getenv("SMTP_IMAP_PORT", "993"))
     smtp_sent_mailbox: str = os.getenv("SMTP_SENT_MAILBOX", "[Gmail]/Sent Mail")
     betting_window_seconds: int = int(os.getenv("BETTING_WINDOW_SECONDS", "40"))
-    game_initiation_seconds: int = int(os.getenv("GAME_INITIATION_SECONDS", "20"))
-    after_game_cooldown_seconds: int = int(os.getenv("AFTER_GAME_COOLDOWN_SECONDS", "20"))
-    card_drawing_delay_seconds: float = float(os.getenv("CARD_DRAWING_DELAY_SECONDS", "1.25"))
+    game_initiation_seconds: int = int(os.getenv("GAME_INITIATION_SECONDS", "10"))
+    after_game_cooldown_seconds: int = int(os.getenv("AFTER_GAME_COOLDOWN_SECONDS", "10"))
+    card_drawing_delay_seconds: float = float(os.getenv("CARD_DRAWING_DELAY_SECONDS", "3"))
     min_bet: Decimal = Decimal("10.000")
     payout_fee_rate: Decimal = Decimal("0.050")
 

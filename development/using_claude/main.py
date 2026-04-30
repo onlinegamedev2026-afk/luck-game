@@ -30,6 +30,7 @@ CAPTCHA_STORE: dict[str, tuple[int, float]] = {}
 OTP_STORE: dict[str, tuple[str, str, str, float]] = {}
 CHILD_EMAIL_OTP_STORE: dict[str, dict[str, str | float | bool]] = {}
 CHILD_EMAIL_OTP_RATE: dict[str, list[float]] = {}
+ADMIN_PWD_OTP_STORE: dict[str, tuple[str, str, float]] = {}  # token -> (admin_id, code_hash, expires_at)
 OTP_TTL_SECONDS = 30 * 60
 OTP_SEND_COOLDOWN_SECONDS = 60
 OTP_SEND_WINDOW_SECONDS = 30 * 60
@@ -390,9 +391,55 @@ def update_password(
 ):
     if actor.role == "ADMIN":
         return back_to("/dashboard", error="Admin password cannot be changed from this page.")
+    redirect = "/games" if actor.role == "USER" else "/dashboard"
+    new_password = new_password.strip()
     try:
         HierarchyService(conn).update_password(actor, old_password, new_password)
-        return back_to("/dashboard", notice="Password updated successfully.")
+        return back_to(redirect, notice=f"Password updated successfully. Your new password: {new_password}")
+    except ValueError as exc:
+        return back_to(redirect, error=str(exc))
+
+
+@app.post("/password/admin/otp/send")
+def send_admin_pwd_otp(
+    old_password: str = Form(...),
+    actor: Actor = Depends(current_actor),
+    conn=Depends(db),
+):
+    if actor.role != "ADMIN":
+        raise HTTPException(status_code=403)
+    if not actor.email:
+        return JSONResponse({"error": "Admin email not configured."}, status_code=400)
+    if not HierarchyService(conn).verify_own_password(actor, old_password):
+        return JSONResponse({"error": "Old password is incorrect."}, status_code=400)
+    code = f"{secrets.randbelow(900000) + 100000}"
+    token = secrets.token_urlsafe(32)
+    ADMIN_PWD_OTP_STORE[token] = (actor.id, otp_hash(code), time.time() + OTP_TTL_SECONDS)
+    delivery = queue_email(
+        actor.email,
+        "Luck Game admin password change OTP",
+        f"Your Luck Game admin password change OTP is {code}. It expires in 30 minutes.",
+    )
+    return JSONResponse({"token": token, "delivery": delivery, "dev_otp": code if not settings.smtp_host else ""})
+
+
+@app.post("/password/admin/update")
+def update_admin_password(
+    old_password: str = Form(...),
+    new_password: str = Form(...),
+    otp_token: str = Form(...),
+    otp_code: str = Form(...),
+    actor: Actor = Depends(current_actor),
+    conn=Depends(db),
+):
+    if actor.role != "ADMIN":
+        return back_to("/dashboard", error="Only admin can use this endpoint.")
+    pending = ADMIN_PWD_OTP_STORE.pop(otp_token, None)
+    if not pending or pending[2] < time.time() or pending[0] != actor.id or not secrets.compare_digest(pending[1], otp_hash(otp_code.strip())):
+        return back_to("/dashboard", error="OTP validation failed. Please try again.")
+    try:
+        HierarchyService(conn).update_password(actor, old_password, new_password)
+        return back_to("/dashboard", notice="Admin password updated successfully.")
     except ValueError as exc:
         return back_to("/dashboard", error=str(exc))
 

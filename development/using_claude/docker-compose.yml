@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   web:
     build: .
@@ -7,7 +5,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://luck_user:dev_user_dev$$2026@host.docker.internal:5432/luck_game_claude}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dev_user:dev_user_dev$$2026@host.docker.internal:5432/luck_game_claude}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -36,7 +34,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://luck_user:dev_user_dev$$2026@host.docker.internal:5432/luck_game_claude}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dev_user:dev_user_dev$$2026@host.docker.internal:5432/luck_game_claude}
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2

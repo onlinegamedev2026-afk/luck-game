@@ -143,12 +143,17 @@ function renderHistory(last10) {
   }
 }
 
-// ── Result panel ─────────────────────────���───────────────────────────────���───
-function showResult(text) {
+// ── Result panel ─────────────────────────────────────────────────────────────
+function showResult(winnerLabel) {
   const r = el("result");
   if (!r) return;
   r.className = "result-panel winner-result";
-  r.textContent = text;
+  const now = new Date().toLocaleTimeString();
+  r.innerHTML = `<div class="winner-celebration">
+    <span class="winner-cup">🏆</span>
+    <span class="winner-headline">Winner &mdash; ${winnerLabel}</span>
+    <span class="winner-time">${now}</span>
+  </div>`;
 }
 
 function clearResult() {
@@ -209,34 +214,23 @@ function handlePhaseCommon(event, data, loadBets, clearBoard) {
     if (box) { box.hidden = true; updateTotals({ hide: true, group_a_total: "0.000", group_b_total: "0.000" }); }
     setBettingOpen(true, "Betting open");
     renderMyBets([], window._sideLabel || (s => `Side ${s}`));
-    startCountdown("Betting closes in", data, 40);
+    startCountdown("Betting closes in", data, data.seconds || 40);
     return true;
   }
   if (event === "game_initiating") {
     setBettingOpen(false, "Betting closed");
     loadBets();
-    startCountdown("Game starts in", data, 20);
+    startCountdown("Game starts in", data, data.seconds || 10);
     return true;
   }
   if (event === "betting_totals") {
     updateTotals(data);
     return true;
   }
-  if (event === "game_started") {
-    setBettingOpen(false, "Betting closed");
-    stopCountdown();
-    clearBoard();
-    return true;
-  }
-  if (event === "game_result") {
-    renderHistory(data.last_10_winners || []);
-    refreshPlayerAmount();
-    return true;
-  }
   if (event === "settlement_cooldown") {
     setBettingOpen(false, "Betting closed");
     loadBets();
-    startCountdown("Next round in", data, 20);
+    startCountdown("Next round in", data, data.seconds || 10);
     refreshPlayerAmount();
     return true;
   }

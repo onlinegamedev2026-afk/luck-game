@@ -43,19 +43,20 @@ function handle(event, data) {
     replay(data.cards_dealt || []);
     renderHistory(data.last_10_winners || []);
     updateTotals(data);
+    const dur = data.phase_duration_seconds;
     const banner = el("banner");
     if (data.phase === "BETTING" && data.phase_ends_at) {
       setBettingOpen(true, "Betting open");
       loadMyBets(window._sideLabel);
-      startCountdown("Betting closes in", data, 40);
+      startCountdown("Betting closes in", data, dur || 40);
     } else if (data.phase === "INITIATING" && data.phase_ends_at) {
       setBettingOpen(false, "Betting closed");
       loadMyBets(window._sideLabel);
-      startCountdown("Game starts in", data, 20);
+      startCountdown("Game starts in", data, dur || 10);
     } else if (data.phase === "SETTLING" && data.phase_ends_at) {
       setBettingOpen(false, "Betting closed");
       loadMyBets(window._sideLabel);
-      startCountdown("Next round in", data, 20);
+      startCountdown("Next round in", data, dur || 10);
     } else {
       setBettingOpen(false, "Waiting for betting window");
       if (banner) banner.textContent = data.in_progress ? "Round in progress…" : "Waiting for next betting window…";
@@ -65,6 +66,13 @@ function handle(event, data) {
 
   if (handlePhaseCommon(event, data, () => loadMyBets(window._sideLabel), clearBoard)) return;
 
+  if (event === "game_started") {
+    setBettingOpen(false, "Betting closed");
+    stopCountdown();
+    clearBoard();
+    if (el("banner")) el("banner").textContent = "Round started — dealing cards…";
+    return;
+  }
   if (event === "card_dealt") {
     const card = [data.rank, data.suit];
     if (data.group === "A") cardsA.push(card); else cardsB.push(card);
@@ -74,20 +82,13 @@ function handle(event, data) {
     return;
   }
   if (event === "game_result") {
-    showResult(`Side ${data.winner} wins — ${data.time}`);
+    showResult(`Side ${data.winner}`);
     const pa = el("panel-a"), pb = el("panel-b");
     if (data.winner === "A") { if (pa) pa.classList.add("winner"); if (pb) pb.classList.add("loser"); }
     else                     { if (pb) pb.classList.add("winner"); if (pa) pa.classList.add("loser"); }
     if (el("banner")) el("banner").textContent = "Round complete.";
     renderHistory(data.last_10_winners || []);
     refreshPlayerAmount();
-    return;
-  }
-  if (event === "game_started") {
-    setBettingOpen(false, "Betting closed");
-    stopCountdown();
-    clearBoard();
-    if (el("banner")) el("banner").textContent = "Round started — dealing cards…";
     return;
   }
 }
