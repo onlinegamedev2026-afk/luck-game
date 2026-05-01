@@ -67,3 +67,23 @@ Updates:
 ```
 ---
 ---
+## prompt - 004 
+`status` : **Done**
+```
+1. parent folder (using_claude) contains a web application made by you
+
+```
+```
+Target folder:
+    This folder
+
+Important:
+    Do not break or modify any existing logic unless it is directly required for the updates below.
+
+Updates:
+    1. can you add another game game called color guessing , same type guess color either red or either blu like A and B then do random choise of color (not random in backgorund, the team or cllor will be drawn where the total bet is lesser, bot both have equal bets then do random choice)
+    2. check the tinpatti and aandar bahar game, and implement the game same way, do not break previous logcs, if there is any issue I will do revert back please prepare for that
+
+```
+---
+---

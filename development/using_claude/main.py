@@ -3,6 +3,7 @@ import hashlib
 import io
 import secrets
 import time
+import uuid
 from decimal import Decimal
 from urllib.parse import urlencode
 
@@ -22,6 +23,7 @@ from services.hierarchy_service import HierarchyService, is_valid_email
 from services.wallet_service import WalletService
 from tasks.celery_app import send_email_job
 from utils.identity import generate_account_id, generate_password
+from utils.money import money, money_str
 
 app = FastAPI(title="Luck Game")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -79,9 +81,120 @@ def queue_email(to_address: str | None, subject: str, body: str) -> dict:
         return send_email_job(to_address, subject, body)
 
 
+def recover_interrupted_sessions(conn) -> None:
+    """On server restart, refund any PLACED bets from sessions that never completed."""
+    pool_row = conn.execute(
+        "SELECT w.wallet_id FROM accounts a JOIN wallets w ON w.owner_id=a.id WHERE a.username='system_pool'"
+    ).fetchone()
+    if not pool_row:
+        return
+    pool_wallet = pool_row["wallet_id"]
+
+    stuck_sessions = conn.execute(
+        "SELECT session_id FROM game_sessions WHERE status NOT IN ('COMPLETED', 'FAILED')"
+    ).fetchall()
+
+    for session_row in stuck_sessions:
+        session_id = session_row["session_id"]
+        placed_bets = conn.execute(
+            "SELECT * FROM bets WHERE session_id=? AND status='PLACED'",
+            (session_id,),
+        ).fetchall()
+
+        for bet in placed_bets:
+            player_wallet_row = conn.execute(
+                "SELECT wallet_id FROM wallets WHERE owner_id=?", (bet["player_id"],)
+            ).fetchone()
+            if not player_wallet_row:
+                # Player account deleted — no wallet to refund, just close the bet
+                conn.execute("UPDATE bets SET status='REFUNDED' WHERE bet_id=?", (bet["bet_id"],))
+                continue
+
+            player_wallet_id = player_wallet_row["wallet_id"]
+            bet_amount = money(bet["amount"])
+            tx_id = str(uuid.uuid4())
+
+            pool_bal_row = conn.execute(
+                "SELECT current_balance FROM wallets WHERE wallet_id=?", (pool_wallet,)
+            ).fetchone()
+            player_bal_row = conn.execute(
+                "SELECT current_balance FROM wallets WHERE wallet_id=?", (player_wallet_id,)
+            ).fetchone()
+            if not pool_bal_row or not player_bal_row:
+                continue
+
+            before_pool = money(pool_bal_row["current_balance"])
+            before_player = money(player_bal_row["current_balance"])
+            # Refund only what is actually available in the pool
+            refund = min(bet_amount, before_pool)
+            if refund <= 0:
+                conn.execute("UPDATE bets SET status='REFUNDED' WHERE bet_id=?", (bet["bet_id"],))
+                continue
+
+            after_pool = money(before_pool - refund)
+            after_player = money(before_player + refund)
+
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO wallet_transactions(
+                        transaction_id, idempotency_key, transaction_type, direction,
+                        from_wallet_id, to_wallet_id, initiated_by_user_id, initiated_by_user_type,
+                        amount, fee_amount, net_amount,
+                        balance_before_from, balance_after_from,
+                        balance_before_to, balance_after_to,
+                        reference_type, reference_id, status, remarks, completed_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'SUCCESS',?,CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        tx_id,
+                        f"refund:{bet['bet_id']}",
+                        "BET_REFUND",
+                        "TRANSFER",
+                        pool_wallet,
+                        player_wallet_id,
+                        "system",
+                        "SYSTEM",
+                        money_str(refund),
+                        money_str("0.000"),
+                        money_str(refund),
+                        money_str(before_pool),
+                        money_str(after_pool),
+                        money_str(before_player),
+                        money_str(after_player),
+                        "GAME_SESSION",
+                        session_id,
+                        "Server restart: bet refunded for interrupted session",
+                    ),
+                )
+                conn.execute(
+                    "UPDATE wallets SET current_balance=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE wallet_id=?",
+                    (money_str(after_pool), pool_wallet),
+                )
+                conn.execute(
+                    "UPDATE wallets SET current_balance=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE wallet_id=?",
+                    (money_str(after_player), player_wallet_id),
+                )
+                conn.execute("UPDATE bets SET status='REFUNDED' WHERE bet_id=?", (bet["bet_id"],))
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+
+        conn.execute(
+            "UPDATE game_sessions SET status='FAILED', completed_at=CURRENT_TIMESTAMP WHERE session_id=?",
+            (session_id,),
+        )
+
+
 @app.on_event("startup")
 async def startup() -> None:
     init_db()
+    conn = connect()
+    try:
+        recover_interrupted_sessions(conn)
+    finally:
+        conn.close()
     GameOrchestrator.start_background_cycles()
 
 
@@ -562,7 +675,12 @@ def game_console(
     active = orchestrator.active_game_for_player(actor)
     if active and active["game_key"] != game_key:
         return back_to("/games", error=f"You already have an active {active['title']} round.")
-    template = "andar_bahar.html" if game_key == "andar-bahar" else "tin_patti.html"
+    if game_key == "andar-bahar":
+        template = "andar_bahar.html"
+    elif game_key == "color-guessing":
+        template = "color_guessing.html"
+    else:
+        template = "tin_patti.html"
     return templates.TemplateResponse(
         template,
         {

@@ -352,9 +352,10 @@ img { display: block; max-width: 100%; }
 .bet-status-badge {
   padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;
 }
-.bet-status-badge.placed  { background: rgba(255,255,255,.12); color: var(--g-text); }
-.bet-status-badge.won     { background: rgba(50,200,100,.25); color: #9ff5b8; }
-.bet-status-badge.lost    { background: rgba(200,50,50,.25); color: #ffa8a8; }
+.bet-status-badge.placed    { background: rgba(255,255,255,.12); color: var(--g-text); }
+.bet-status-badge.won       { background: rgba(50,200,100,.25); color: #9ff5b8; }
+.bet-status-badge.lost      { background: rgba(200,50,50,.25); color: #ffa8a8; }
+.bet-status-badge.refunded  { background: rgba(120,120,220,.22); color: #bbbfff; }
 .bets-panel .muted { color: var(--g-muted); }
 
 /* Joker */
@@ -435,6 +436,98 @@ img { display: block; max-width: 100%; }
 .h-badge.side-a  { border-color: rgba(100,200,255,.35); color: #80d4ff; background: rgba(80,160,255,.1); }
 .h-badge.side-b  { border-color: rgba(255,180,80,.35); color: var(--g-gold); background: rgba(232,200,74,.1); }
 
+/* ── Color Guessing Game ────────────────────────────────── */
+.color-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* Override group-panel's card-game defaults for color panels */
+.color-guessing-page .group-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.color-panel-red  { border-top: 3px solid rgba(199,53,53,.55); }
+.color-panel-blue { border-top: 3px solid rgba(26,95,163,.55); }
+.color-panel-red.winner  {
+  border-color: #ff6b6b;
+  box-shadow: 0 0 36px rgba(255,100,100,.3);
+}
+.color-panel-blue.winner {
+  border-color: #4da8ff;
+  box-shadow: 0 0 36px rgba(77,168,255,.3);
+}
+
+.color-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 0 24px;
+}
+.color-circle {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  transition: transform .35s ease, box-shadow .35s ease;
+  flex-shrink: 0;
+}
+.color-circle-red {
+  background: radial-gradient(circle at 35% 32%, #ff8a8a, #c73535 70%);
+  box-shadow: 0 6px 28px rgba(199,53,53,.5);
+}
+.color-circle-blue {
+  background: radial-gradient(circle at 35% 32%, #6dbfff, #1a5fa3 70%);
+  box-shadow: 0 6px 28px rgba(26,95,163,.5);
+}
+
+/* Pulsing blink while drawing — scale + opacity + glow */
+.color-circle.revealing {
+  animation: color-pulse-red .55s ease-in-out infinite;
+}
+.color-circle-blue.revealing {
+  animation: color-pulse-blue .55s ease-in-out infinite;
+}
+@keyframes color-pulse-red {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 6px 28px rgba(199,53,53,.5);
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: .78;
+    box-shadow: 0 0 55px rgba(255,80,80,.85), 0 6px 28px rgba(199,53,53,.4);
+  }
+}
+@keyframes color-pulse-blue {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 6px 28px rgba(26,95,163,.5);
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: .78;
+    box-shadow: 0 0 55px rgba(60,140,255,.85), 0 6px 28px rgba(26,95,163,.4);
+  }
+}
+
+.color-circle.winner-glow-red {
+  transform: scale(1.2);
+  box-shadow: 0 0 60px rgba(255,80,80,.75), 0 6px 28px rgba(199,53,53,.5);
+}
+.color-circle.winner-glow-blue {
+  transform: scale(1.2);
+  box-shadow: 0 0 60px rgba(60,140,255,.75), 0 6px 28px rgba(26,95,163,.5);
+}
+
+/* Color history badges */
+.h-badge.color-red  { border-color: rgba(255,100,100,.4); color: #ff8888; background: rgba(199,53,53,.15); }
+.h-badge.color-blue { border-color: rgba(77,168,255,.4);  color: #88c8ff; background: rgba(26,95,163,.15); }
+
 /* ── Responsive ─────────────────────────────────────────── */
 @media (max-width: 900px) {
   .dash-grid { grid-template-columns: 1fr; }
@@ -445,7 +538,7 @@ img { display: block; max-width: 100%; }
   .ledger-date { grid-column: 1 / -1; text-align: left; }
 }
 @media (max-width: 640px) {
-  .card-groups { grid-template-columns: 1fr; }
+  .card-groups, .color-groups { grid-template-columns: 1fr; }
   .game-controls { flex-direction: column; align-items: flex-start; }
   .bet-form { flex-direction: column; align-items: flex-start; }
   .topbar { padding: 10px 14px; }

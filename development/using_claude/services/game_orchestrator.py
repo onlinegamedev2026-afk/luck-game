@@ -9,6 +9,7 @@ from typing import Any
 from core.config import settings
 from core.database import connect
 from games.andar_bahar import AndarBaharGame
+from games.color_guessing import ColorGuessingGame
 from games.tin_patti import TinPattiGame
 from models.schemas import Actor
 from realtime.manager import manager
@@ -33,6 +34,15 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
         "total_draws": None,
         "cards_per_side": None,
         "has_joker": True,
+    },
+    "color-guessing": {
+        "db_key": "COLOR_GUESSING",
+        "title": "Color Guess",
+        "engine": ColorGuessingGame,
+        "total_draws": 1,
+        "cards_per_side": None,
+        "has_joker": False,
+        "is_color_game": True,
     },
 }
 
@@ -342,7 +352,9 @@ class GameOrchestrator:
                     "UPDATE game_sessions SET status='RUNNING', payload=? WHERE session_id=?",
                     (json.dumps(result), session_id),
                 )
-                if self.definition["has_joker"]:
+                if self.definition.get("is_color_game"):
+                    await self._reveal_color(result)
+                elif self.definition["has_joker"]:
                     self._joker[self.game_key] = self._card_dict(result["JOKER"])
                     await asyncio.sleep(settings.card_drawing_delay_seconds)
                     await manager.broadcast("joker_opened", {"game_key": self.game_key, "joker": self._joker[self.game_key]})
@@ -436,6 +448,14 @@ class GameOrchestrator:
             card = cards[group][indexes[group]]
             indexes[group] += 1
             await self._deal(group, card, draw_num, total_draws)
+
+    async def _reveal_color(self, result: dict) -> None:
+        await asyncio.sleep(settings.card_drawing_delay_seconds)
+        await manager.broadcast("color_revealed", {
+            "game_key": self.game_key,
+            "winner": result["WINNER"],
+            "color": result["COLOR"],
+        })
 
     async def _deal(self, group: str, card: tuple[str, str], draw_num: int, total_draws: int) -> None:
         event = {
