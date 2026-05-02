@@ -6,6 +6,7 @@ USER root
 COPY entrypoint.sh /entrypoint.sh
 
 RUN set -eux; \
+    apk add --no-cache netcat-openbsd; \
     if ! id -u pgbouncer >/dev/null 2>&1; then \
       addgroup -S pgbouncer; \
       adduser -S -G pgbouncer pgbouncer; \

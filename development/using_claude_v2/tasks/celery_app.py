@@ -1,5 +1,6 @@
 from celery import Celery
 import imaplib
+import socket
 import smtplib
 import time
 from email.message import EmailMessage
@@ -14,8 +15,8 @@ celery_app = Celery(
 )
 
 
-@celery_app.task
-def send_email_job(to_address: str, subject: str, body: str) -> dict:
+@celery_app.task(bind=True, max_retries=5, default_retry_delay=30)
+def send_email_job(self, to_address: str, subject: str, body: str) -> dict:
     if not to_address:
         return {"sent": False, "error": "Missing recipient email address."}
     if not settings.smtp_host:
@@ -36,6 +37,10 @@ def send_email_job(to_address: str, subject: str, body: str) -> dict:
             smtp.send_message(message)
         cleanup = _delete_sent_copy(message_id) if settings.smtp_delete_sent_copy else {"enabled": False}
         return {"sent": True, "to": to_address, "subject": subject, "sent_copy_cleanup": cleanup}
+    except smtplib.SMTPAuthenticationError as exc:
+        return {"sent": False, "error": str(exc), "to": to_address, "subject": subject}
+    except (OSError, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, socket.gaierror, TimeoutError) as exc:
+        raise self.retry(exc=exc, countdown=min(300, 30 * (self.request.retries + 1))) from exc
     except Exception as exc:
         return {"sent": False, "error": str(exc), "to": to_address, "subject": subject}
 

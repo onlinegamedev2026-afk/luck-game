@@ -22,11 +22,11 @@
       </div>
       <div class="field-group">
         <label class="field-label">Username</label>
-        <input name="username" class="field-input" autocomplete="username" placeholder="Enter your username" required>
+        <input id="login-username" name="username" class="field-input" autocomplete="new-password" placeholder="Username" required>
       </div>
       <div class="field-group">
         <label class="field-label">Password</label>
-        <input name="password" type="password" class="field-input" autocomplete="current-password" placeholder="Enter your password" required>
+        <input id="login-password" name="password" type="password" class="field-input" autocomplete="new-password" placeholder="Password" required>
       </div>
       <div class="captcha-group">
         <div class="captcha-question">
@@ -42,4 +42,15 @@
     </form>
   </section>
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var u = document.getElementById('login-username');
+    var p = document.getElementById('login-password');
+    if (u) u.value = '';
+    if (p) p.value = '';
+  });
+</script>
 {% endblock %}

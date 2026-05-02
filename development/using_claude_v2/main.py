@@ -496,46 +496,6 @@ async def update_password(
         return back_to(redirect, error=str(exc))
 
 
-@app.post("/password/admin/otp/send")
-async def send_admin_pwd_otp(
-    old_password: str = Form(...),
-    actor: Actor = Depends(current_actor),
-    conn=Depends(db),
-):
-    if actor.role != "ADMIN":
-        raise HTTPException(status_code=403)
-    if not actor.email:
-        return JSONResponse({"error": "Admin email not configured."}, status_code=400)
-    if not HierarchyService(conn).verify_own_password(actor, old_password):
-        return JSONResponse({"error": "Old password is incorrect."}, status_code=400)
-    token, code = await create_admin_pwd_otp(actor.id)
-    delivery = queue_email(actor.email, "Luck Game admin password change OTP", f"Your OTP is {code}. It expires in 30 minutes.")
-    return JSONResponse({"token": token, "delivery": delivery, "dev_otp": code if settings.show_dev_otp else ""})
-
-
-@app.post("/password/admin/update")
-async def update_admin_password(
-    request: Request,
-    old_password: str = Form(...),
-    new_password: str = Form(...),
-    otp_token: str = Form(...),
-    otp_code: str = Form(...),
-    csrf_token: str = Form(...),
-    actor: Actor = Depends(current_actor),
-    conn=Depends(db),
-):
-    _verify_csrf(request, csrf_token)
-    if actor.role != "ADMIN":
-        return back_to("/dashboard", error="Only admin can use this endpoint.")
-    ok = await verify_admin_pwd_otp(otp_token, otp_code, actor.id)
-    if not ok:
-        return back_to("/dashboard", error="OTP validation failed. Please try again.")
-    try:
-        HierarchyService(conn).update_password(actor, old_password, new_password)
-        return back_to("/dashboard", notice="Admin password updated successfully.")
-    except ValueError as exc:
-        return back_to("/dashboard", error=str(exc))
-
 
 # ---------------------------------------------------------------------------
 # Wallet
@@ -671,6 +631,7 @@ async def games(
     conn=Depends(db),
 ):
     active = GameOrchestrator(conn).active_game_for_player(actor)
+    csrf = await _csrf_token_for(request)
     return templates.TemplateResponse(
         "games.html",
         {
@@ -680,6 +641,7 @@ async def games(
             "active_game": active,
             "error": error,
             "notice": notice,
+            "csrf_token": csrf,
         },
     )
 

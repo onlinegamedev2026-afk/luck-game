@@ -251,7 +251,7 @@ class GameOrchestrator:
                 """,
                 (self.db_key,),
             ).fetchone()
-            if not session or await self._phase() != "BETTING":
+            if not session:
                 raise ValueError("Bets are accepted only during the active betting time.")
             session_id = session["session_id"]
 

@@ -27,12 +27,13 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from core.config import settings
-from core.database import init_pool, get_pool
+from core.database import init_pool, init_db, get_pool
 from core.logging_config import configure_logging
 from core.redis_client import init_redis, get_redis, key as rk, DistributedLock
 from games.andar_bahar import AndarBaharGame
 from games.color_guessing import ColorGuessingGame
 from games.tin_patti import TinPattiGame
+from services.hierarchy_service import HierarchyService
 from utils.money import money
 
 configure_logging()
@@ -366,16 +367,25 @@ async def _run_one_cycle(game_key: str, db_key: str, defn: dict, lock: Distribut
             )
             conn.commit()
 
-        from services.hierarchy_service import HierarchyService
         with get_pool().connection() as conn:
             conn.autocommit = True
             HierarchyService(conn).process_pending_deletions()
+            last_10_rows = conn.execute(
+                """
+                SELECT winner FROM game_sessions
+                WHERE game_key=%s AND status='COMPLETED' AND winner IS NOT NULL
+                ORDER BY completed_at DESC LIMIT 10
+                """,
+                (db_key,),
+            ).fetchall()
+            last_10_winners = [row["winner"] for row in reversed(last_10_rows)]
 
         await _publish("game_result", {
             "game_key": game_key,
             "winner": winner,
             "time": result.get("TIME", ""),
             "winning_card": (await _get_state(game_key, "winning_card")),
+            "last_10_winners": last_10_winners,
         })
 
         # --- SETTLING phase ---
@@ -562,6 +572,7 @@ def recover_interrupted_sessions() -> None:
 
 async def main() -> None:
     init_pool()
+    init_db()
     init_redis()
 
     recover_interrupted_sessions()

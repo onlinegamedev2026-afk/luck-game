@@ -34,31 +34,6 @@
           <button class="btn btn-primary">Update</button>
         </form>
       </section>
-      {% else %}
-      <section class="panel">
-        <h2 class="panel-title">Change Password</h2>
-        <form class="create-form" method="post" action="/password/admin/update" id="admin-pwd-form">
-          <div class="field-row">
-            <div class="field-group" style="flex:1">
-              <label class="field-label">Current Password</label>
-              <input name="old_password" id="admin-old-pwd" type="password" class="field-input" placeholder="Current password" autocomplete="current-password" required>
-            </div>
-            <div class="field-group" style="flex:1">
-              <label class="field-label">New Password</label>
-              <input name="new_password" id="admin-new-pwd" type="password" class="field-input" placeholder="New password (min 6 chars)" autocomplete="new-password" required>
-            </div>
-          </div>
-          <div class="otp-inline">
-            <button type="button" id="admin-send-otp" class="btn btn-secondary btn-sm" disabled>Send OTP to Email</button>
-            <input name="otp_code" id="admin-otp-input" class="field-input" inputmode="numeric" maxlength="6" placeholder="6-digit OTP" disabled style="width:140px">
-            <span id="admin-otp-status" class="otp-status-text"></span>
-          </div>
-          <input type="hidden" name="otp_token" id="admin-otp-token">
-          <div class="form-actions">
-            <button type="submit" id="admin-update-btn" class="btn btn-primary" disabled>Update Password</button>
-          </div>
-        </form>
-      </section>
       {% endif %}
 
       {% if actor.role == "ADMIN" %}
@@ -375,74 +350,5 @@ if (generateButton) {
   });
 }
 
-// Admin password change with OTP
-const adminSendOtp = document.querySelector("#admin-send-otp");
-if (adminSendOtp) {
-  const oldPwd    = document.querySelector("#admin-old-pwd");
-  const newPwd    = document.querySelector("#admin-new-pwd");
-  const otpInput  = document.querySelector("#admin-otp-input");
-  const otpStatus = document.querySelector("#admin-otp-status");
-  const otpToken  = document.querySelector("#admin-otp-token");
-  const updateBtn = document.querySelector("#admin-update-btn");
-  const pwdForm   = document.querySelector("#admin-pwd-form");
-
-  const setStatus = (msg, ok = false) => {
-    otpStatus.textContent = msg;
-    otpStatus.className = "otp-status-text" + (ok ? " otp-ok" : (msg ? " otp-error" : ""));
-  };
-
-  const resetOtp = () => {
-    otpToken.value = "";
-    otpInput.value = "";
-    otpInput.disabled = true;
-    setStatus("");
-    updateBtn.disabled = true;
-  };
-
-  const updateControls = () => {
-    const hasOld = oldPwd.value.trim().length > 0;
-    const hasNew = newPwd.value.trim().length >= 6;
-    adminSendOtp.disabled = !(hasOld && hasNew);
-    updateBtn.disabled = !(otpToken.value && otpInput.value.trim().length === 6);
-  };
-
-  oldPwd.addEventListener("input", () => { resetOtp(); updateControls(); });
-  newPwd.addEventListener("input", () => { resetOtp(); updateControls(); });
-  otpInput.addEventListener("input", updateControls);
-
-  adminSendOtp.addEventListener("click", async () => {
-    resetOtp();
-    setStatus("Sending OTP…");
-    adminSendOtp.disabled = true;
-    const body = new URLSearchParams({ old_password: oldPwd.value });
-    const response = await fetch("/password/admin/otp/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setStatus(data.error || "Could not send OTP.");
-      updateControls();
-      return;
-    }
-    otpToken.value = data.token || "";
-    otpInput.disabled = false;
-    otpInput.focus();
-    const devOtp = data.dev_otp ? ` (Dev: ${data.dev_otp})` : "";
-    setStatus(`OTP sent to admin email.${devOtp}`, true);
-    updateControls();
-  });
-
-  pwdForm.addEventListener("submit", (event) => {
-    if (!otpToken.value || otpInput.value.trim().length !== 6) {
-      event.preventDefault();
-      setStatus("Enter the 6-digit OTP sent to admin email.");
-      otpInput.focus();
-    }
-  });
-
-  updateControls();
-}
 </script>
 {% endblock %}
