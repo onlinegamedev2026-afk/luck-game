@@ -122,8 +122,9 @@ img { display: block; max-width: 100%; }
   background: linear-gradient(135deg, #0f3320 0%, #1e5c36 50%, #e5ede1 100%);
 }
 .login-shell  { width: min(440px, calc(100vw - 32px)); display: grid; gap: 24px; }
-.login-brand  { text-align: center; color: #fff; }
-.brand-icon   { font-size: 48px; margin-bottom: 8px; }
+.login-brand  { text-align: center; color: #fff; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.brand-icon   { font-size: 48px; display: flex; justify-content: center; align-items: center; }
+.brand-icon-img { width: 44px; height: 44px; object-fit: contain; display: block; filter: drop-shadow(0 4px 10px rgba(0,0,0,.35)); }
 .login-brand h1 { font-size: 32px; font-weight: 800; margin-bottom: 4px; }
 .login-brand p  { color: rgba(255,255,255,.7); font-size: 15px; }
 .login-panel  {
@@ -241,7 +242,8 @@ img { display: block; max-width: 100%; }
   transition: box-shadow .15s;
 }
 .game-card:hover { box-shadow: var(--shadow-md); }
-.game-card-icon  { font-size: 36px; line-height: 1; flex-shrink: 0; }
+.game-card-icon  { font-size: 36px; line-height: 1; flex-shrink: 0; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
+.game-card-icon-img { width: 44px; height: 44px; object-fit: contain; display: block; filter: drop-shadow(0 2px 5px rgba(0,0,0,.2)); }
 .game-card-body  { flex: 1; display: grid; gap: 4px; }
 .game-card-title { font-size: 18px; font-weight: 700; }
 .game-card-desc  { font-size: 13px; color: var(--c-muted); }

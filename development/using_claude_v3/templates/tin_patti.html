@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Teen Patti — Luck Game{% endblock %}
+{% block title %}Teen Patti — {{ app_name }}{% endblock %}
 {% block body_class %}game-page tin-patti-page{% endblock %}
 {% block body %}
 <header class="topbar game-topbar">
@@ -42,7 +42,7 @@
       </div>
       <span id="bet-status" class="bet-status">Waiting for betting time</span>
     </form>
-    {% if actor.role in ["ADMIN", "AGENT"] %}
+    {% if actor.role == "ADMIN" %}
     <div id="betting-totals" class="betting-totals" hidden>
       <span class="total-label">Side A:</span> <b id="total-a">0.000</b>
       <span class="total-sep">·</span>

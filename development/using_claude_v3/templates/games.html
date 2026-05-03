@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Games — Luck Game{% endblock %}
+{% block title %}Games — {{ app_name }}{% endblock %}
 {% block body_class %}dashboard-page{% endblock %}
 {% block body %}
 <header class="topbar">
@@ -45,7 +45,7 @@
     <div class="game-grid">
       {% for game in games %}
       <article class="game-card">
-        <div class="game-card-icon">🃏</div>
+        <div class="game-card-icon"><img src="/static/images/game_icon.png" alt="Game" class="game-card-icon-img" style="width:44px;height:44px;object-fit:contain;display:block"></div>
         <div class="game-card-body">
           <h3 class="game-card-title">{{ game.title }}</h3>
           <p class="game-card-desc">Bet on side A or B. Win 1.95× your bet. New rounds start every cycle.</p>

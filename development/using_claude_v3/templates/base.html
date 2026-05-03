@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token | default('') }}">
-  <title>{% block title %}Luck Game{% endblock %}</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/styles.css?v=3">
   {% block head %}{% endblock %}
   <script>
     // Auto-inject CSRF token into all POST form submissions.

@@ -310,7 +310,7 @@ async def _run_one_cycle(game_key: str, db_key: str, defn: dict, lock: Distribut
             "game_key": game_key,
             "group_a_total": f"{totals['group_a_total']:.3f}",
             "group_b_total": f"{totals['group_b_total']:.3f}",
-        }, roles=["ADMIN", "AGENT"])
+        }, roles=["ADMIN"])
         await lock.refresh()
         await asyncio.sleep(settings.game_initiation_seconds)
 
@@ -404,7 +404,7 @@ async def _run_one_cycle(game_key: str, db_key: str, defn: dict, lock: Distribut
             "game_key": game_key,
             "group_a_total": f"{totals['group_a_total']:.3f}",
             "group_b_total": f"{totals['group_b_total']:.3f}",
-        }, roles=["ADMIN", "AGENT"])
+        }, roles=["ADMIN"])
         await lock.refresh()
         await asyncio.sleep(settings.after_game_cooldown_seconds)
 

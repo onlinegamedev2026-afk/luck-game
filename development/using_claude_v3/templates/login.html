@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Luck Game — Login{% endblock %}
+{% block title %}{{ app_name }} — Login{% endblock %}
 {% block body_class %}login-page{% endblock %}
 {% block body %}
 <main class="login-shell">
   <div class="login-brand">
-    <div class="brand-icon">🎴</div>
-    <h1>Luck Game</h1>
+    <div class="brand-icon"><img src="/static/images/game_icon.png" alt="{{ app_name }}" class="brand-icon-img" style="width:66px;height:66px;object-fit:contain;display:block"></div>
+    <h1>{{ app_name }}</h1>
     <p>Sign in to your account</p>
   </div>
   <section class="login-panel">

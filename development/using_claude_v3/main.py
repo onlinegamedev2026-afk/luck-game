@@ -54,6 +54,7 @@ log = logging.getLogger(__name__)
 app = FastAPI(title="Luck Game v3")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["app_name"] = settings.app_name
 
 
 # ---------------------------------------------------------------------------
@@ -855,7 +856,7 @@ async def game_ws(game_key: str, websocket: WebSocket):
             if await session_service.is_session_valid(user_id, nonce):
                 actor = AuthService(conn).get_actor(user_id)
         await manager.connect(websocket, actor.role if actor else None, actor.id if actor else None)
-        include_totals = bool(actor and actor.role in {"ADMIN", "AGENT"})
+        include_totals = bool(actor and actor.role == "ADMIN")
         try:
             orchestrator = GameOrchestrator(conn, game_key)
         except ValueError:
