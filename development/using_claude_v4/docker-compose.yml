@@ -1,0 +1,161 @@
+services:
+
+  # ──────────────────────────────────────────────────────────
+  # Nginx — sole public entry point
+  # ──────────────────────────────────────────────────────────
+  nginx:
+    build:
+      context: ./nginx
+    container_name: luckv3_nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - web
+    networks:
+      - frontend
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ──────────────────────────────────────────────────────────
+  # FastAPI web app (two replicas in production-like mode)
+  # ──────────────────────────────────────────────────────────
+  web:
+    build: .
+    env_file:
+      - .env
+    environment:
+      APP_ENV: local-prod
+      DATABASE_URL: postgresql://${DB_USER:-dev_user}:${DB_PASSWORD:-dev_pass}@pgbouncer:5432/${DB_NAME:-luck_game_claude}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      GAME_SCHEDULER_ENABLED: "false"
+      COOKIE_SECURE: "false"   # set true once TLS is in front
+    deploy:
+      replicas: 2
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ──────────────────────────────────────────────────────────
+  # PgBouncer — connection pooler between app and host Postgres
+  # DB_HOST points to the host machine's PostgreSQL (port 5432)
+  # ──────────────────────────────────────────────────────────
+  pgbouncer:
+    build:
+      context: ./pgbouncer
+    container_name: luckv3_pgbouncer
+    environment:
+      DB_HOST: host.docker.ipv4
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-luck_game_claude}
+      DB_USER: ${DB_USER:-dev_user}
+      DB_PASSWORD: ${DB_PASSWORD:-dev_pass}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 25
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "host.docker.ipv4:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5432 && nc -z \"$${DB_HOST}\" \"$${DB_PORT}\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+      - egress
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Redis — cache, Pub/Sub, Celery broker
+  # ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: luckv3_redis
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────────────────────
+  # Celery worker — email and background jobs
+  # ──────────────────────────────────────────────────────────
+  celery_worker:
+    build: .
+    container_name: luckv3_celery_worker
+    command: celery -A tasks.celery_app.celery_app worker --loglevel=info --concurrency=4
+    env_file:
+      - .env
+    environment:
+      APP_ENV: local-prod
+      DATABASE_URL: postgresql://${DB_USER:-dev_user}:${DB_PASSWORD:-dev_pass}@pgbouncer:5432/${DB_NAME:-luck_game_claude}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    networks:
+      - backend
+      - egress
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────
+  # Game scheduler — sole owner of game cycles
+  # ──────────────────────────────────────────────────────────
+  game_scheduler:
+    build: .
+    container_name: luckv3_game_scheduler
+    command: python -m scheduler.game_scheduler
+    env_file:
+      - .env
+    environment:
+      APP_ENV: local-prod
+      DATABASE_URL: postgresql://${DB_USER:-dev_user}:${DB_PASSWORD:-dev_pass}@pgbouncer:5432/${DB_NAME:-luck_game_claude}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      GAME_SCHEDULER_ENABLED: "true"
+    depends_on:
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+
+networks:
+  frontend:
+  egress:
+  backend:
+    internal: true
+
+volumes:
+  redis_data:
