@@ -25,20 +25,31 @@ CHANNEL = settings.redis_pubsub_channel
 
 class RealtimeManager:
     def __init__(self) -> None:
-        # WebSocket → role mapping (local to this process)
-        self.active: dict[WebSocket, str | None] = {}
+        # WebSocket → {"role": str | None, "user_id": str | None}
+        self.active: dict[WebSocket, dict] = {}
         self._listener_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Connection management
     # ------------------------------------------------------------------
 
-    async def connect(self, websocket: WebSocket, role: str | None = None) -> None:
+    async def connect(self, websocket: WebSocket, role: str | None = None, user_id: str | None = None) -> None:
         await websocket.accept()
-        self.active[websocket] = role
+        self.active[websocket] = {"role": role, "user_id": user_id}
 
     def disconnect(self, websocket: WebSocket) -> None:
         self.active.pop(websocket, None)
+
+    async def kick_user(self, user_id: str) -> None:
+        """Close all WebSocket connections belonging to user_id with code 4001."""
+        to_kick = [ws for ws, info in list(self.active.items()) if info.get("user_id") == user_id]
+        for ws in to_kick:
+            try:
+                await ws.send_json({"event": "session_invalidated", "data": {}})
+                await ws.close(code=4001)
+            except Exception:
+                pass
+            self.disconnect(ws)
 
     # ------------------------------------------------------------------
     # Publishing (send to all containers via Redis)
@@ -60,8 +71,8 @@ class RealtimeManager:
 
     async def _deliver(self, event: str, data: dict, roles: set[str] | None) -> None:
         stale: list[WebSocket] = []
-        for socket, role in list(self.active.items()):
-            if roles is not None and role not in roles:
+        for socket, info in list(self.active.items()):
+            if roles is not None and info.get("role") not in roles:
                 continue
             try:
                 await socket.send_json({"event": event, "data": data})

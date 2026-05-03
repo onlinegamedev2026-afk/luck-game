@@ -24,6 +24,15 @@
           }
         }
       }, true);
+
+      // Remove flash params (error, notice) from the URL after they are displayed
+      // so a page refresh does not re-show stale messages.
+      var url = new URL(window.location.href);
+      if (url.searchParams.has('error') || url.searchParams.has('notice')) {
+        url.searchParams.delete('error');
+        url.searchParams.delete('notice');
+        history.replaceState(null, '', url.toString());
+      }
     });
   </script>
 </head>

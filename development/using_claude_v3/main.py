@@ -13,6 +13,7 @@ Changes from v2:
 import csv
 import io
 import logging
+import secrets
 from datetime import datetime
 from decimal import Decimal
 from urllib.parse import urlencode
@@ -26,8 +27,9 @@ from fastapi.templating import Jinja2Templates
 from core.config import settings
 from core.database import init_db, init_pool, close_pool, get_pool
 from core.logging_config import configure_logging
-from core.redis_client import init_redis, close_redis, get_redis, session_key
-from core.security import read_session, sign_session, generate_csrf_token, verify_csrf_token, session_timeout_seconds
+from core.redis_client import init_redis, close_redis, get_redis
+from core.security import read_session, sign_session, generate_csrf_token, verify_csrf_token
+from services import session_service
 from models.schemas import Actor
 from realtime.manager import manager
 from services.auth_service import AuthService
@@ -86,30 +88,6 @@ def db():
 
 
 # ---------------------------------------------------------------------------
-# Session helpers (single active session)
-# ---------------------------------------------------------------------------
-
-async def _register_session(user_id: str, token: str) -> None:
-    """Store the active session token in Redis.
-
-    Any previously registered token for this user is immediately invalidated —
-    enforcing the single active session constraint at the backend level.
-    """
-    r = get_redis()
-    ttl = session_timeout_seconds()
-    rkey = session_key(user_id)
-    if ttl is None:
-        await r.set(rkey, token)
-    else:
-        await r.set(rkey, token, ex=ttl)
-
-
-async def _revoke_session(user_id: str) -> None:
-    """Remove the active session token so no further requests are accepted."""
-    await get_redis().delete(session_key(user_id))
-
-
-# ---------------------------------------------------------------------------
 # Auth dependency
 # ---------------------------------------------------------------------------
 
@@ -118,11 +96,9 @@ async def current_actor(request: Request, conn=Depends(db)) -> Actor:
     session = read_session(session_token)
     if not session:
         raise HTTPException(status_code=401)
-    user_id, _role = session
+    user_id, _role, nonce = session
 
-    # Single active session: reject any token that is not the current one.
-    active_token = await get_redis().get(session_key(user_id))
-    if active_token != session_token:
+    if not await session_service.is_session_valid(user_id, nonce):
         raise HTTPException(status_code=401)
 
     actor = AuthService(conn).get_actor(user_id)
@@ -130,7 +106,6 @@ async def current_actor(request: Request, conn=Depends(db)) -> Actor:
         raise HTTPException(status_code=401)
 
     if actor.status != "ACTIVE":
-        # Allow inactive users who are mid-game to finish their round.
         active_game = GameOrchestrator(conn).active_game_for_player(actor)
         if not active_game or not (request.url.path.startswith("/games") or request.url.path == "/api/me"):
             raise HTTPException(status_code=401)
@@ -223,11 +198,11 @@ async def ready():
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, error: str = "", notice: str = ""):
+async def index(request: Request, error: str = "", notice: str = "", conflict_token: str = ""):
     captcha = await make_captcha()
     return templates.TemplateResponse(
         "login.html",
-        {"request": request, "captcha": captcha, "error": error, "notice": notice},
+        {"request": request, "captcha": captcha, "error": error, "notice": notice, "conflict_token": conflict_token},
     )
 
 
@@ -249,6 +224,12 @@ async def login(
         if auth.credential_failure_reason(username, password, role) == "inactive":
             return back_to("/", error="Your account is inactive. Please contact your agent.")
         return back_to("/", error="Invalid login details.")
+
+    # Check for an existing active session — redirect to conflict confirmation if found.
+    if await session_service.get_active_nonce(actor.id):
+        conflict_token = await session_service.create_conflict_token(actor.id, actor.role)
+        return RedirectResponse(f"/?conflict_token={conflict_token}", status_code=303)
+
     if role in {"ADMIN", "AGENT"}:
         if not actor.email:
             return back_to("/", error="This account does not have an email for OTP login.")
@@ -266,15 +247,57 @@ async def login(
                 "dev_otp": code if settings.show_dev_otp else "",
             },
         )
-    token = auth.login(username, password, role)
-    # Register in Redis — overwrites any existing session (single active session).
-    await _register_session(actor.id, token)
-    redirect = RedirectResponse("/games" if actor.role == "USER" else "/dashboard", status_code=303)
-    redirect.set_cookie(
-        "luck_session", token,
-        httponly=True, samesite="lax",
-        secure=settings.cookie_secure,
-    )
+    nonce = secrets.token_urlsafe(16)
+    await session_service.set_active_session(actor.id, nonce)
+    token = sign_session(actor.id, actor.role, nonce)
+    redirect = RedirectResponse("/games", status_code=303)
+    redirect.set_cookie("luck_session", token, httponly=True, samesite="lax", secure=settings.cookie_secure)
+    return redirect
+
+
+@app.post("/login/force")
+async def login_force(
+    request: Request,
+    conflict_token: str = Form(...),
+    conn=Depends(db),
+):
+    """Consume the conflict token, invalidate the old session, and begin a fresh login."""
+    payload = await session_service.consume_conflict_token(conflict_token)
+    if not payload:
+        return back_to("/", error="Session confirmation expired. Please log in again.")
+
+    user_id = payload["user_id"]
+    role = payload["role"]
+
+    await session_service.invalidate_session(user_id)
+    await manager.kick_user(user_id)
+
+    if role in {"ADMIN", "AGENT"}:
+        actor = AuthService(conn).get_actor(user_id)
+        if not actor or actor.status != "ACTIVE":
+            return back_to("/", error="Account is not active.")
+        if not actor.email:
+            return back_to("/", error="This account does not have an email for OTP login.")
+        otp_token, code = await create_login_otp(actor.id, actor.role)
+        delivery = queue_email(actor.email, "Luck Game login OTP", f"Your Luck Game login OTP is {code}. It expires in 30 minutes.")
+        return templates.TemplateResponse(
+            "otp.html",
+            {
+                "request": request,
+                "otp_token": otp_token,
+                "role": role,
+                "username": "",
+                "error": "",
+                "delivery": delivery,
+                "dev_otp": code if settings.show_dev_otp else "",
+            },
+        )
+
+    nonce = secrets.token_urlsafe(16)
+    await session_service.set_active_session(user_id, nonce)
+    token = sign_session(user_id, role, nonce)
+    redirect = RedirectResponse("/games", status_code=303)
+    redirect.set_cookie("luck_session", token, httponly=True, samesite="lax", secure=settings.cookie_secure)
     return redirect
 
 
@@ -286,15 +309,11 @@ async def login_otp(otp_token: str = Form(...), otp_code: str = Form(...), conn=
     actor = AuthService(conn).get_actor(payload["actor_id"])
     if not actor or actor.role != payload["role"] or actor.status != "ACTIVE":
         return back_to("/", error="Account is not active.")
-    session_token = sign_session(actor.id, actor.role)
-    # Register in Redis — overwrites any existing session (single active session).
-    await _register_session(actor.id, session_token)
+    nonce = secrets.token_urlsafe(16)
+    await session_service.set_active_session(actor.id, nonce)
+    session_token = sign_session(actor.id, actor.role, nonce)
     redirect = RedirectResponse("/dashboard", status_code=303)
-    redirect.set_cookie(
-        "luck_session", session_token,
-        httponly=True, samesite="lax",
-        secure=settings.cookie_secure,
-    )
+    redirect.set_cookie("luck_session", session_token, httponly=True, samesite="lax", secure=settings.cookie_secure)
     return redirect
 
 
@@ -303,7 +322,7 @@ async def logout(request: Request):
     session_token = request.cookies.get("luck_session")
     session = read_session(session_token)
     if session:
-        await _revoke_session(session[0])
+        await session_service.invalidate_session(session[0])
     redirect = RedirectResponse("/", status_code=303)
     redirect.delete_cookie("luck_session")
     return redirect
@@ -832,12 +851,10 @@ async def game_ws(game_key: str, websocket: WebSocket):
         session_token = websocket.cookies.get("luck_session")
         session = read_session(session_token)
         if session:
-            user_id = session[0]
-            # Enforce single active session for WebSocket connections too.
-            active_token = await get_redis().get(session_key(user_id))
-            if active_token == session_token:
+            user_id, _role, nonce = session
+            if await session_service.is_session_valid(user_id, nonce):
                 actor = AuthService(conn).get_actor(user_id)
-        await manager.connect(websocket, actor.role if actor else None)
+        await manager.connect(websocket, actor.role if actor else None, actor.id if actor else None)
         include_totals = bool(actor and actor.role in {"ADMIN", "AGENT"})
         try:
             orchestrator = GameOrchestrator(conn, game_key)

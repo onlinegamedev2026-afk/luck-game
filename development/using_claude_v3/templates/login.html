@@ -11,6 +11,19 @@
   <section class="login-panel">
     {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
     {% if notice %}<div class="alert alert-notice">{{ notice }}</div>{% endif %}
+
+    {% if conflict_token %}
+    <div class="alert alert-notice">
+      Your account is already logged in on another device or browser session.
+    </div>
+    <form method="post" action="/login/force" class="login-form">
+      <input type="hidden" name="conflict_token" value="{{ conflict_token }}">
+      <button type="submit" class="btn btn-primary btn-full">Log out other device and sign in here</button>
+    </form>
+    <div style="text-align:center;margin-top:1rem;">
+      <a href="/" class="btn btn-ghost btn-sm">Cancel</a>
+    </div>
+    {% else %}
     <form method="post" action="/login" class="login-form">
       <div class="field-group">
         <label class="field-label">Role</label>
@@ -40,6 +53,7 @@
       <p class="login-hint">Admin and Agent logins require email OTP verification.</p>
       <button type="submit" class="btn btn-primary btn-full">Sign In</button>
     </form>
+    {% endif %}
   </section>
 </main>
 {% endblock %}

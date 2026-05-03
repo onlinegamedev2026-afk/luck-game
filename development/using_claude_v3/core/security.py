@@ -21,14 +21,14 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hmac.compare_digest(digest, stored)
 
 
-def sign_session(user_id: str, role: str) -> str:
+def sign_session(user_id: str, role: str, nonce: str) -> str:
     hours = settings.session_timeout_hour
     if hours == -1:
         delta = timedelta(days=365 * 10)  # effectively infinite
     else:
         delta = timedelta(hours=max(1, min(10, hours)))
     expires = int((datetime.utcnow() + delta).timestamp())
-    payload = f"{user_id}:{role}:{expires}"
+    payload = f"{user_id}:{role}:{expires}:{nonce}"
     sig = hmac.new(settings.secret_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return f"{payload}:{sig}"
 
@@ -41,20 +41,20 @@ def session_timeout_seconds() -> int | None:
     return max(1, min(10, hours)) * 3600
 
 
-def read_session(token: str | None) -> tuple[str, str] | None:
+def read_session(token: str | None) -> tuple[str, str, str] | None:
     if not token:
         return None
     parts = token.split(":")
-    if len(parts) != 4:
+    if len(parts) != 5:
         return None
-    user_id, role, expires, sig = parts
-    payload = f"{user_id}:{role}:{expires}"
+    user_id, role, expires, nonce, sig = parts
+    payload = f"{user_id}:{role}:{expires}:{nonce}"
     expected = hmac.new(settings.secret_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
         return None
     if int(expires) < int(datetime.utcnow().timestamp()):
         return None
-    return user_id, role
+    return user_id, role, nonce
 
 
 # ---------------------------------------------------------------------------
