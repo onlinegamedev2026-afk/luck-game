@@ -1,7 +1,12 @@
 {
   "permissions": {
+    "allow": [
+      "Read(//c/Users/PritamV/OneDrive/2025-lenovo/OneDrive/Desktop/Sanat_Project/luck_game/development/**)",
+      "Bash(cp -r \"c:/Users/PritamV/OneDrive/2025-lenovo/OneDrive/Desktop/Sanat_Project/luck_game/development/using_claude_v5\" \"c:/Users/PritamV/OneDrive/2025-lenovo/OneDrive/Desktop/Sanat_Project/luck_game/development/using_claude_v6\" && echo \"copy done\" && ls \"c:/Users/PritamV/OneDrive/2025-lenovo/OneDrive/Desktop/Sanat_Project/luck_game/development/using_claude_v6\")"
+    ],
     "additionalDirectories": [
-      "c:\\Users\\PritamV\\OneDrive\\2025-lenovo\\OneDrive\\Desktop\\Sanat_Project\\luck_game\\development\\using_claude_v3\\static"
+      "c:\\Users\\PritamV\\OneDrive\\2025-lenovo\\OneDrive\\Desktop\\Sanat_Project\\luck_game\\development\\using_claude_v3\\static",
+      "c:\\Users\\PritamV\\OneDrive\\2025-lenovo\\OneDrive\\Desktop\\Sanat_Project\\luck_game\\development\\using_claude_v6"
     ]
   }
 }

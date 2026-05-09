@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\PritamV\\\\OneDrive\\\\2025-lenovo\\\\OneDrive\\\\Desktop\\\\Sanat_Project\\\\luck_game\\\\development\\\\using_claude_v4\" -Recurse -Force)",
+      "Bash(Select-Object FullName)"
+    ]
+  }
+}
