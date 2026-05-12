@@ -70,16 +70,23 @@ class RealtimeManager:
     # ------------------------------------------------------------------
 
     async def _deliver(self, event: str, data: dict, roles: set[str] | None) -> None:
-        stale: list[WebSocket] = []
-        for socket, info in list(self.active.items()):
-            if roles is not None and info.get("role") not in roles:
-                continue
+        payload = {"event": event, "data": data}
+        targets = [
+            ws for ws, info in list(self.active.items())
+            if roles is None or info.get("role") in roles
+        ]
+
+        async def _send(ws: WebSocket) -> WebSocket | None:
             try:
-                await socket.send_json({"event": event, "data": data})
+                await ws.send_json(payload)
+                return None
             except Exception:
-                stale.append(socket)
-        for socket in stale:
-            self.disconnect(socket)
+                return ws
+
+        results = await asyncio.gather(*(_send(ws) for ws in targets))
+        for ws in results:
+            if ws is not None:
+                self.disconnect(ws)
 
     # ------------------------------------------------------------------
     # Background Redis subscriber

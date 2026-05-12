@@ -37,7 +37,7 @@ Internet
 
 1. Go to DigitalOcean → Create → Droplets
 2. Choose **Ubuntu 22.04 LTS**
-3. Plan: start with **2 vCPU / 4 GB RAM** (Basic, $24/mo) — scale up later
+3. Plan: **2 vCPU / 8 GB RAM** ($48/mo) — required for 2000 concurrent users
 4. Region: choose same region as your managed DB (e.g., BLR1 / Bangalore)
 5. Add your SSH key
 6. Enable **VPC Network** (recommended — keeps DB traffic private)
@@ -464,7 +464,16 @@ curl http://localhost/health
 
 ### Nginx Config Location
 
-The nginx folder inside this project (`using_claude_v7/nginx/`) is NOT used in v7 — it was used when nginx ran in Docker (v6). The active Nginx config lives at `/etc/nginx/sites-available/luckgame` on the host machine.
+The `nginx/nginx.conf` file in this repo is the reference config for the host Nginx.
+You can copy it directly instead of pasting manually:
+
+```bash
+cp nginx/nginx.conf /etc/nginx/sites-available/luckgame
+# then edit server_name inside the file
+nginx -t && systemctl reload nginx
+```
+
+The active Nginx config lives at `/etc/nginx/sites-available/luckgame` on the host machine.
 
 ### COOKIE_SECURE
 

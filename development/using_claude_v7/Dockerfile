@@ -14,7 +14,7 @@ EXPOSE 8000
 # Override CMD in docker-compose for celery_worker or game_scheduler containers.
 CMD ["gunicorn", "main:app", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--workers", "2", \
+     "--workers", "4", \
      "--bind", "0.0.0.0:8000", \
      "--timeout", "120", \
      "--graceful-timeout", "30", \
