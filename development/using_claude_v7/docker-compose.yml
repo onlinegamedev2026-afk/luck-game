@@ -4,19 +4,21 @@ services:
   # PgBouncer — connection pooler in front of the DigitalOcean
   # managed PostgreSQL. DB_HOST must be the managed DB private
   # hostname (set in .env). DB_PORT=25060 for DigitalOcean.
-  # SERVER_TLS_SSLMODE=require (managed DB enforces TLS).
+  # SERVER_TLS_SSLMODE=verify-ca (managed DB enforces TLS + CA cert verification).
   # ──────────────────────────────────────────────────────────
   pgbouncer:
     build:
       context: ./pgbouncer
     container_name: luckv7_pgbouncer
+    volumes:
+      - ./certs/ca-certificate.crt:/etc/pgbouncer/ca-certificate.crt:ro
     environment:
       DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT:-25060}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
-      SERVER_TLS_SSLMODE: ${SERVER_TLS_SSLMODE:-require}
+      SERVER_TLS_SSLMODE: ${SERVER_TLS_SSLMODE:-verify-ca}
       POOL_MODE: transaction
       MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-500}
       DEFAULT_POOL_SIZE: ${PGBOUNCER_DEFAULT_POOL_SIZE:-30}

@@ -460,7 +460,7 @@ curl http://localhost/health
 - `pgbouncer` inside Docker talks to the DigitalOcean managed DB over the egress network
 - All app containers (web, celery) connect to `pgbouncer:5432` internally — never directly to the managed DB
 - If pgbouncer fails to start, check `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` in `.env`
-- `SERVER_TLS_SSLMODE=require` is mandatory for DigitalOcean managed PostgreSQL
+- `SERVER_TLS_SSLMODE=verify-ca` is mandatory for DigitalOcean managed PostgreSQL — verifies the server certificate against `certs/ca-certificate.crt`
 
 ### Nginx Config Location
 

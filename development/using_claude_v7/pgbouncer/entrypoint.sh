@@ -9,7 +9,7 @@
 : "${POOL_MODE:=transaction}"
 : "${MAX_CLIENT_CONN:=200}"
 : "${DEFAULT_POOL_SIZE:=25}"
-: "${SERVER_TLS_SSLMODE:=require}"
+: "${SERVER_TLS_SSLMODE:=verify-ca}"
 
 mkdir -p /etc/pgbouncer
 
@@ -32,6 +32,7 @@ pool_mode = ${POOL_MODE}
 max_client_conn = ${MAX_CLIENT_CONN}
 default_pool_size = ${DEFAULT_POOL_SIZE}
 server_tls_sslmode = ${SERVER_TLS_SSLMODE}
+server_tls_ca_file = /etc/pgbouncer/ca-certificate.crt
 server_reset_query = DISCARD ALL
 log_connections = 0
 log_disconnections = 0
